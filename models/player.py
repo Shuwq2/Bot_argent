@@ -31,6 +31,34 @@ class Player:
         "WEAPON": None,
         "ACCESSORY": None
     })
+    
+    # ═══════════════════════════════════════════════════════════
+    # 📊 SYSTÈME DE NIVEAU ET COMBAT
+    # ═══════════════════════════════════════════════════════════
+    level: int = 1
+    xp: int = 0
+    total_xp: int = 0
+    
+    # Stats de combat de base (modifiées par équipement)
+    base_hp: int = 100
+    base_attack: int = 10
+    base_defense: int = 5
+    base_speed: int = 10
+    
+    # Stats de combat actuelles (en combat)
+    current_hp: int = 100
+    
+    # Compétences débloquées (skill_id -> niveau)
+    skills: Dict[str, int] = field(default_factory=dict)
+    equipped_skills: List[str] = field(default_factory=list)  # Max 4 skills
+    
+    # Stats de boss
+    bosses_defeated: int = 0
+    bosses_kills: Dict[str, int] = field(default_factory=dict)  # boss_id -> kills
+    last_boss_fight: str = ""  # Date du dernier combat
+    
+    # Skill points disponibles
+    skill_points: int = 0
 
     # Constantes de jeu
     MAX_DAILY_CHESTS = 50
@@ -139,6 +167,110 @@ class Player:
         """Retourne la liste des item_ids équipés."""
         return [item_id for item_id in self.equipment.values() if item_id]
 
+    # ═══════════════════════════════════════════════════════════
+    # 📊 MÉTHODES DE NIVEAU
+    # ═══════════════════════════════════════════════════════════
+    
+    def get_xp_for_level(self, level: int) -> int:
+        """Calcule l'XP nécessaire pour atteindre un niveau."""
+        # Formule exponentielle : 100 * level^1.8
+        return int(100 * (level ** 1.8))
+    
+    def get_xp_to_next_level(self) -> int:
+        """Retourne l'XP nécessaire pour le prochain niveau."""
+        return self.get_xp_for_level(self.level + 1)
+    
+    def get_xp_progress(self) -> tuple:
+        """Retourne (xp_actuel, xp_requis, pourcentage)."""
+        required = self.get_xp_to_next_level()
+        current = self.xp
+        percentage = min(100, int((current / required) * 100)) if required > 0 else 0
+        return current, required, percentage
+    
+    def add_xp(self, amount: int) -> List[int]:
+        """
+        Ajoute de l'XP et gère les level up.
+        Retourne la liste des niveaux atteints.
+        """
+        self.xp += amount
+        self.total_xp += amount
+        
+        levels_gained = []
+        while self.xp >= self.get_xp_to_next_level():
+            self.xp -= self.get_xp_to_next_level()
+            self.level += 1
+            self.skill_points += 1
+            levels_gained.append(self.level)
+            
+            # Augmenter les stats de base à chaque niveau
+            self.base_hp += 10
+            self.base_attack += 2
+            self.base_defense += 1
+            self.base_speed += 1
+        
+        return levels_gained
+    
+    def get_max_hp(self) -> int:
+        """Calcule les HP max avec bonus d'équipement."""
+        return self.base_hp
+    
+    def get_attack(self) -> int:
+        """Calcule l'attaque totale avec bonus."""
+        return self.base_attack
+    
+    def get_defense(self) -> int:
+        """Calcule la défense totale avec bonus."""
+        return self.base_defense
+    
+    def get_speed(self) -> int:
+        """Calcule la vitesse totale."""
+        return self.base_speed
+    
+    def heal_full(self) -> None:
+        """Restaure tous les HP."""
+        self.current_hp = self.get_max_hp()
+    
+    def take_damage(self, damage: int) -> int:
+        """Inflige des dégâts. Retourne les dégâts réels."""
+        # Réduction par la défense
+        actual_damage = max(1, damage - self.get_defense() // 2)
+        self.current_hp = max(0, self.current_hp - actual_damage)
+        return actual_damage
+    
+    def is_alive(self) -> bool:
+        """Vérifie si le joueur est en vie."""
+        return self.current_hp > 0
+    
+    def equip_skill(self, skill_id: str) -> bool:
+        """Équipe une compétence. Max 4."""
+        if skill_id in self.equipped_skills:
+            return False
+        if len(self.equipped_skills) >= 4:
+            return False
+        if skill_id not in self.skills:
+            return False
+        self.equipped_skills.append(skill_id)
+        return True
+    
+    def unequip_skill(self, skill_id: str) -> bool:
+        """Déséquipe une compétence."""
+        if skill_id in self.equipped_skills:
+            self.equipped_skills.remove(skill_id)
+            return True
+        return False
+    
+    def unlock_skill(self, skill_id: str) -> bool:
+        """Débloque une compétence avec des skill points."""
+        if self.skill_points <= 0:
+            return False
+        if skill_id in self.skills:
+            # Améliorer la compétence
+            self.skills[skill_id] += 1
+        else:
+            self.skills[skill_id] = 1
+        self.skill_points -= 1
+        return True
+
     def _reset_daily_if_needed(self) -> None:
         """Réinitialise le compteur journalier si nécessaire."""
         today = date.today().isoformat()
@@ -159,7 +291,22 @@ class Player:
             "pets": self.pets,
             "equipped_pet": self.equipped_pet,
             "eggs_opened": self.eggs_opened,
-            "equipment": self.equipment
+            "equipment": self.equipment,
+            # Nouvelles données niveau/combat
+            "level": self.level,
+            "xp": self.xp,
+            "total_xp": self.total_xp,
+            "base_hp": self.base_hp,
+            "base_attack": self.base_attack,
+            "base_defense": self.base_defense,
+            "base_speed": self.base_speed,
+            "current_hp": self.current_hp,
+            "skills": self.skills,
+            "equipped_skills": self.equipped_skills,
+            "bosses_defeated": self.bosses_defeated,
+            "bosses_kills": self.bosses_kills,
+            "last_boss_fight": self.last_boss_fight,
+            "skill_points": self.skill_points
         }
 
     @classmethod
@@ -173,7 +320,7 @@ class Player:
             "WEAPON": None,
             "ACCESSORY": None
         }
-        return cls(
+        player = cls(
             user_id=data["user_id"],
             coins=data.get("coins", 0),
             inventory=data.get("inventory", {}),
@@ -184,5 +331,21 @@ class Player:
             pets=data.get("pets", {}),
             equipped_pet=data.get("equipped_pet"),
             eggs_opened=data.get("eggs_opened", 0),
-            equipment=data.get("equipment", default_equipment)
+            equipment=data.get("equipment", default_equipment),
+            # Nouvelles données niveau/combat
+            level=data.get("level", 1),
+            xp=data.get("xp", 0),
+            total_xp=data.get("total_xp", 0),
+            base_hp=data.get("base_hp", 100),
+            base_attack=data.get("base_attack", 10),
+            base_defense=data.get("base_defense", 5),
+            base_speed=data.get("base_speed", 10),
+            current_hp=data.get("current_hp", 100),
+            skills=data.get("skills", {}),
+            equipped_skills=data.get("equipped_skills", []),
+            bosses_defeated=data.get("bosses_defeated", 0),
+            bosses_kills=data.get("bosses_kills", {}),
+            last_boss_fight=data.get("last_boss_fight", ""),
+            skill_points=data.get("skill_points", 0)
         )
+        return player

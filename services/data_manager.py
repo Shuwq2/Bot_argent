@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 from models.item import Item, Pet, EquipmentSet
 from models.player import Player
+from models.combat import Boss, Skill, SkillType
 
 
 class DataManager:
@@ -25,12 +26,16 @@ class DataManager:
         self.items_file = os.path.join(data_folder, "items.json")
         self.pets_file = os.path.join(data_folder, "pets.json")
         self.sets_file = os.path.join(data_folder, "sets.json")
+        self.bosses_file = os.path.join(data_folder, "bosses.json")
+        self.skills_file = os.path.join(data_folder, "skills.json")
         
         self._ensure_data_folder()
         self._items_cache: Dict[str, Item] = {}
         self._players_cache: Dict[int, Player] = {}
         self._pets_cache: Dict[str, Pet] = {}
         self._sets_cache: Dict[str, EquipmentSet] = {}
+        self._bosses_cache: Dict[str, Boss] = {}
+        self._skills_cache: Dict[str, Skill] = {}
         self._egg_cost: int = 5000
         self._egg_drop_rates: Dict[str, float] = {}
         
@@ -38,6 +43,8 @@ class DataManager:
         self._load_players()
         self._load_pets()
         self._load_sets()
+        self._load_bosses()
+        self._load_skills()
 
     def _ensure_data_folder(self) -> None:
         """Crée le dossier de données s'il n'existe pas."""
@@ -242,3 +249,75 @@ class DataManager:
             reverse=True
         )
         return sorted_players[:limit]
+
+    # ==================== GESTION DES BOSS ====================
+
+    def _load_bosses(self) -> None:
+        """Charge les boss depuis le fichier JSON."""
+        if os.path.exists(self.bosses_file):
+            with open(self.bosses_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for boss_data in data.get("bosses", []):
+                    boss = Boss.from_dict(boss_data)
+                    self._bosses_cache[boss.boss_id] = boss
+
+    def get_boss(self, boss_id: str) -> Optional[Boss]:
+        """Récupère un boss par son ID."""
+        boss = self._bosses_cache.get(boss_id)
+        if boss:
+            # Retourner une copie pour ne pas modifier le cache
+            import copy
+            return copy.deepcopy(boss)
+        return None
+
+    def get_boss_by_name(self, name: str) -> Optional[Boss]:
+        """Récupère un boss par son nom (recherche partielle)."""
+        import copy
+        for boss in self._bosses_cache.values():
+            if boss.name.lower() == name.lower():
+                return copy.deepcopy(boss)
+        # Recherche partielle
+        for boss in self._bosses_cache.values():
+            if name.lower() in boss.name.lower():
+                return copy.deepcopy(boss)
+        return None
+
+    def get_all_bosses(self) -> List[Boss]:
+        """Retourne la liste de tous les boss."""
+        return sorted(
+            self._bosses_cache.values(),
+            key=lambda b: b.level_required
+        )
+
+    # ==================== GESTION DES SKILLS ====================
+
+    def _load_skills(self) -> None:
+        """Charge les skills depuis le fichier JSON."""
+        if os.path.exists(self.skills_file):
+            with open(self.skills_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for skill_data in data.get("skills", []):
+                    skill = Skill.from_dict(skill_data)
+                    self._skills_cache[skill.skill_id] = skill
+
+    def get_skill(self, skill_id: str) -> Optional[Skill]:
+        """Récupère un skill par son ID."""
+        return self._skills_cache.get(skill_id)
+
+    def get_skill_by_name(self, name: str) -> Optional[Skill]:
+        """Récupère un skill par son nom (recherche partielle)."""
+        for skill in self._skills_cache.values():
+            if skill.name.lower() == name.lower():
+                return skill
+        # Recherche partielle
+        for skill in self._skills_cache.values():
+            if name.lower() in skill.name.lower():
+                return skill
+        return None
+
+    def get_all_skills(self) -> List[Skill]:
+        """Retourne la liste de tous les skills."""
+        return sorted(
+            self._skills_cache.values(),
+            key=lambda s: s.level_required
+        )

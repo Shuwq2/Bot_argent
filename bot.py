@@ -10,8 +10,14 @@ import discord
 from discord.ext import commands
 
 from services import DataManager
-from cogs.economy import Economy
 from cogs.admin import Admin
+from cogs.chests import Chests
+from cogs.inventory import Inventory
+from cogs.profile import Profile
+from cogs.trading import Trading
+from cogs.pets import Pets
+from cogs.equipment import Equipment
+from cogs.battle import Battle
 
 
 # Charger les variables d'environnement
@@ -37,9 +43,15 @@ class EconomyBot(commands.Bot):
 
     async def setup_hook(self):
         """Configuration initiale du bot."""
-        # Charger les cogs
-        await self.add_cog(Economy(self, self.data_manager))
+        # Charger tous les cogs
         await self.add_cog(Admin(self, self.data_manager))
+        await self.add_cog(Chests(self, self.data_manager))
+        await self.add_cog(Inventory(self, self.data_manager))
+        await self.add_cog(Profile(self, self.data_manager))
+        await self.add_cog(Trading(self, self.data_manager))
+        await self.add_cog(Pets(self, self.data_manager))
+        await self.add_cog(Equipment(self, self.data_manager))
+        await self.add_cog(Battle(self, self.data_manager))
         
         # Synchroniser les commandes slash
         await self.tree.sync()
