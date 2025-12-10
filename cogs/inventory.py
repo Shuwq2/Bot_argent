@@ -512,8 +512,7 @@ class Inventory(commands.Cog):
         )
         
         # Barre de vie
-        hp_percent = player.current_hp / max_hp
-        hp_bar = create_progress_bar(hp_percent, length=15)
+        hp_bar = create_progress_bar(player.current_hp, max_hp, length=15)
         
         embed.description = (
             f"```ansi\n"
