@@ -19,7 +19,7 @@ class Player:
 
     # Constantes de jeu
     MAX_DAILY_CHESTS = 50
-    CHEST_COST = 100  # Coût pour ouvrir un coffre supplémentaire
+    CHEST_COST = 3500  # Coût pour ouvrir un coffre supplémentaire
 
     def can_open_free_chest(self) -> bool:
         """Vérifie si le joueur peut ouvrir un coffre gratuitement."""
