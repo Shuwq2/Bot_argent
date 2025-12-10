@@ -20,13 +20,13 @@ class Economy(commands.Cog):
     # 📸 IMAGES DE RARETÉ - Aurores boréales par couleur
     # ══════════════════════════════════════════════════════════════
     
-    # Images locales hébergées (tu peux les uploader sur Discord ou un CDN)
+    # Images hébergées sur Imgur
     RARITY_IMAGES = {
-        "normal": "https://i.imgur.com/placeholder_grey.png",      # Gris/Blanc
-        "rare": "https://i.imgur.com/placeholder_blue.png",        # Bleu - ton image bleue
-        "epic": "https://i.imgur.com/placeholder_purple.png",      # Violet - ton image violette  
-        "legendary": "https://i.imgur.com/placeholder_gold.png",   # Or/Jaune - ton image dorée
-        "mythic": "https://i.imgur.com/placeholder_red.png",       # Rouge - ton image rouge
+        "normal": "https://i.imgur.com/5IGZUZk.png",      # Vert (Normal)
+        "rare": "https://i.imgur.com/OX8kBYX.png",        # Bleu (Rare)
+        "epic": "https://i.imgur.com/EZuex8X.png",        # Violet (Epic)
+        "legendary": "https://i.imgur.com/V3Nw9TL.png",   # Or/Jaune (Legendary)
+        "mythic": "https://i.imgur.com/lgNP9Cg.png",      # Rouge (Mythic)
     }
     
     # Séquence d'animation (couleurs qui défilent)
