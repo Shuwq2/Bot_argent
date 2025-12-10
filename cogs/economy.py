@@ -1,12 +1,13 @@
 """
-Cog gérant l'économie du bot : coffres, inventaire, vente d'objets.
-Version améliorée avec animations et visuels.
+Cog gérant l'économie du bot : coffres, inventaire, vente, trade.
+Design amélioré avec animations et système d'échange.
 """
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Optional
+from typing import Optional, Dict
 import asyncio
+from datetime import datetime, timedelta
 
 from models import Chest, Rarity
 from services import DataManager
@@ -15,213 +16,238 @@ from services import DataManager
 class Economy(commands.Cog):
     """Cog pour le système d'économie et de collection."""
 
-    # GIFs d'animation pour l'ouverture des coffres
-    CHEST_OPENING_GIFS = {
-        "opening": "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcHd4OHZwMnRiMHBhMnVxdWVqNjhqYnVhMnQwY3g5dDdqYzBrZ2FqZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xUOwGdA2o7E4TPJICQ/giphy.gif",
-        Rarity.NORMAL: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNnE4bWd2OWVwMW5xZWNzYmxmN2RyMTJzcHBxMmV5cHp2a3QzZWFkaiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/12FfNKPlSN8d1e/giphy.gif",
-        Rarity.RARE: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG9mZWFuY3VpNnVxcjFndmR6dHF6cDFuNmNqYTBhY3Y5cWs4eWR6aSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0MYC0LajbaPoEADu/giphy.gif",
-        Rarity.EPIC: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMHZ3cTd0cWFyeGx6NHdtbGV6cjBtdm5xZjZ2ZHl1OWVuaHlhcDVuYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7TKSjRrfIPjeiVyM/giphy.gif",
-        Rarity.LEGENDARY: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdHRhbGFtdmZ0ZGRwY2Zja2xhNnVwaGdvaTFkbHhzNXl0aGlqeXdpcSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26BRzozg4TCBXv6QU/giphy.gif",
-        Rarity.MYTHIC: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExN3VsY2FwcnE4ejVvYzVzNmlzMTBxZ2x4N2NqaGZ0dG56cHZlZnVjaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l4FGni1RBAR2OWsGk/giphy.gif"
+    # ══════════════════════════════════════════════════════════════
+    # 📸 GIFS - REMPLACE CES URLS PAR TES PROPRES GIFS
+    # ══════════════════════════════════════════════════════════════
+    
+    GIFS = {
+        # Ouverture de coffre
+        "chest_opening": "REMPLACE_PAR_TON_GIF",  # Animation d'ouverture
+        "chest_normal": "REMPLACE_PAR_TON_GIF",   # Révélation Normal
+        "chest_rare": "REMPLACE_PAR_TON_GIF",     # Révélation Rare
+        "chest_epic": "REMPLACE_PAR_TON_GIF",     # Révélation Epic
+        "chest_legendary": "REMPLACE_PAR_TON_GIF", # Révélation Légendaire
+        "chest_mythic": "REMPLACE_PAR_TON_GIF",   # Révélation Mythique
+        
+        # Économie
+        "coins": "REMPLACE_PAR_TON_GIF",          # Animation pièces
+        "sell": "REMPLACE_PAR_TON_GIF",           # Animation vente
+        "shop": "REMPLACE_PAR_TON_GIF",           # Animation boutique
+        
+        # Profil et stats
+        "profile": "REMPLACE_PAR_TON_GIF",        # Animation profil
+        "inventory": "REMPLACE_PAR_TON_GIF",      # Animation inventaire
+        "leaderboard": "REMPLACE_PAR_TON_GIF",    # Animation classement
+        
+        # Trade
+        "trade_pending": "REMPLACE_PAR_TON_GIF",  # Attente de trade
+        "trade_success": "REMPLACE_PAR_TON_GIF",  # Trade réussi
+        "trade_cancel": "REMPLACE_PAR_TON_GIF",   # Trade annulé
+        
+        # Erreurs et succès
+        "error": "REMPLACE_PAR_TON_GIF",          # Animation erreur
+        "success": "REMPLACE_PAR_TON_GIF",        # Animation succès
+        "empty": "REMPLACE_PAR_TON_GIF",          # Inventaire vide
     }
 
-    # Images par catégorie d'objets
-    CATEGORY_IMAGES = {
-        "Armes": "https://i.imgur.com/6QZ7K5E.png",
-        "Armures": "https://i.imgur.com/8HJ0YR1.png", 
-        "Gemmes": "https://i.imgur.com/xQzKnNa.png",
-        "Accessoires": "https://i.imgur.com/W3Z5xXw.png",
-        "Potions": "https://i.imgur.com/YK7j3Gg.png",
-        "Parchemins": "https://i.imgur.com/5wH7Lam.png",
-        "Créatures": "https://i.imgur.com/NJ9bKzP.png",
-        "Livres": "https://i.imgur.com/qKjGk8s.png",
-        "Nourriture": "https://i.imgur.com/RZnV8Hx.png"
-    }
-
-    # Images par rareté
-    RARITY_IMAGES = {
-        Rarity.NORMAL: "https://i.imgur.com/vJSKJHh.png",
-        Rarity.RARE: "https://i.imgur.com/Px0bVCq.png",
-        Rarity.EPIC: "https://i.imgur.com/kV5G1HQ.png",
-        Rarity.LEGENDARY: "https://i.imgur.com/MdJ3yZB.png",
-        Rarity.MYTHIC: "https://i.imgur.com/1kR8nN9.png"
-    }
-
-    # Couleurs Discord par rareté
-    RARITY_COLORS = {
+    # ══════════════════════════════════════════════════════════════
+    # 🎨 COULEURS PAR RARETÉ
+    # ══════════════════════════════════════════════════════════════
+    
+    COLORS = {
         Rarity.NORMAL: 0x9e9e9e,      # Gris
-        Rarity.RARE: 0x2196F3,        # Bleu
-        Rarity.EPIC: 0x9C27B0,        # Violet
-        Rarity.LEGENDARY: 0xFFD700,   # Or
-        Rarity.MYTHIC: 0xFF1744       # Rouge flamboyant
+        Rarity.RARE: 0x3498db,        # Bleu
+        Rarity.EPIC: 0x9b59b6,        # Violet
+        Rarity.LEGENDARY: 0xf1c40f,   # Or
+        Rarity.MYTHIC: 0xe74c3c,      # Rouge
+        "success": 0x2ecc71,          # Vert
+        "error": 0xe74c3c,            # Rouge
+        "info": 0x3498db,             # Bleu
+        "warning": 0xf39c12,          # Orange
+        "trade": 0x1abc9c,            # Turquoise
+        "shop": 0xe91e63,             # Rose
+        "profile": 0x9b59b6,          # Violet
+    }
+
+    # ══════════════════════════════════════════════════════════════
+    # 🎭 EMOJIS DÉCORATIFS
+    # ══════════════════════════════════════════════════════════════
+    
+    EMOJIS = {
+        "coin": "💰",
+        "gem": "💎",
+        "chest": "🎁",
+        "inventory": "🎒",
+        "profile": "👤",
+        "trade": "🔄",
+        "shop": "🏪",
+        "star": "⭐",
+        "fire": "🔥",
+        "sparkle": "✨",
+        "check": "✅",
+        "cross": "❌",
+        "arrow": "➤",
+        "crown": "👑",
+        "trophy": "🏆",
     }
 
     def __init__(self, bot: commands.Bot, data_manager: DataManager):
         self.bot = bot
         self.data = data_manager
         self.chest = Chest(self.data.get_all_items())
+        self.pending_trades: Dict[int, dict] = {}  # user_id -> trade_info
 
-    # ==================== COMMANDE COFFRE ====================
+    # ══════════════════════════════════════════════════════════════
+    # 🎁 COMMANDE COFFRE
+    # ══════════════════════════════════════════════════════════════
 
-    @app_commands.command(name="coffre", description="🎁 Ouvre un coffre mystérieux pour obtenir un objet !")
-    @app_commands.describe(payer="💎 Payer 3500 pièces pour un coffre supplémentaire")
+    @app_commands.command(name="coffre", description="🎁 Ouvre un coffre mystérieux !")
+    @app_commands.describe(payer="💎 Payer 3500 pièces pour un coffre bonus")
     async def open_chest(self, interaction: discord.Interaction, payer: Optional[bool] = False):
-        """Ouvre un coffre avec animation et donne un objet aléatoire."""
+        """Ouvre un coffre avec animation."""
         player = self.data.get_player(interaction.user.id)
         
-        # Vérifier si le joueur peut ouvrir un coffre
+        # Vérifications
         if not player.can_open_free_chest() and not payer:
-            embed = discord.Embed(
-                title="🚫 Limite Journalière Atteinte !",
-                description=(
-                    f"```fix\n"
-                    f"Tu as ouvert {player.MAX_DAILY_CHESTS}/{player.MAX_DAILY_CHESTS} coffres aujourd'hui\n"
-                    f"```\n"
-                    f"╔══════════════════════════════════╗\n"
-                    f"║  💰 Solde: **{player.coins:,}** pièces\n"
-                    f"║  💎 Coût coffre: **{player.CHEST_COST:,}** pièces\n"
-                    f"╚══════════════════════════════════╝\n\n"
-                    f"🔮 Utilise `/coffre payer:True` pour acheter\n"
-                    f"⏰ Ou reviens demain pour tes coffres gratuits !"
-                ),
-                color=0xFF6B6B
+            embed = self._create_error_embed(
+                "🚫 Limite Journalière Atteinte",
+                f"Tu as ouvert **{player.MAX_DAILY_CHESTS}/{player.MAX_DAILY_CHESTS}** coffres aujourd'hui.\n\n"
+                f"╭─────────────────────────╮\n"
+                f"│ {self.EMOJIS['coin']} Solde: **{player.coins:,}**\n"
+                f"│ {self.EMOJIS['gem']} Coût: **{player.CHEST_COST:,}**\n"
+                f"╰─────────────────────────╯\n\n"
+                f"➤ `/coffre payer:True` pour acheter\n"
+                f"➤ Reviens demain pour 50 coffres gratuits !"
             )
-            embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcHd4OHZwMnRiMHBhMnVxdWVqNjhqYnVhMnQwY3g5dDdqYzBrZ2FqZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xUOwGdA2o7E4TPJICQ/giphy.gif")
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         if payer and not player.can_open_free_chest():
             if not player.can_afford_chest():
-                embed = discord.Embed(
-                    title="💸 Fonds Insuffisants !",
-                    description=(
-                        f"```diff\n"
-                        f"- Coffre requis: {player.CHEST_COST:,} 💰\n"
-                        f"- Ton solde: {player.coins:,} 💰\n"
-                        f"- Manque: {player.CHEST_COST - player.coins:,} 💰\n"
-                        f"```\n"
-                        f"💡 **Astuce:** Vends tes objets avec `/vendre` !"
-                    ),
-                    color=0xFF6B6B
+                embed = self._create_error_embed(
+                    "💸 Fonds Insuffisants",
+                    f"```diff\n"
+                    f"- Requis:  {player.CHEST_COST:,} 💰\n"
+                    f"- Solde:   {player.coins:,} 💰\n"
+                    f"- Manque:  {player.CHEST_COST - player.coins:,} 💰\n"
+                    f"```\n"
+                    f"💡 Vends des objets avec `/vendre` !"
                 )
-                embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3k5cHh4czBvNnVmYjJ4YWRobTVqZXBrMGdvcG5leXl4cXo0aXMzbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/hpXxJ78YtpT0s/giphy.gif")
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
-        # ═══════════ ANIMATION D'OUVERTURE ═══════════
-        
-        # Phase 1: Coffre qui apparaît
+        # ═══ PHASE 1: Animation d'ouverture ═══
         opening_embed = discord.Embed(
-            title="✨ Ouverture du Coffre Mystérieux... ✨",
-            description=(
-                "```\n"
-                "╔═══════════════════════════════════╗\n"
-                "║     🎁 COFFRE EN COURS...         ║\n"
-                "║                                   ║\n"
-                "║        ████████████               ║\n"
-                "║       █▓▓▓▓▓▓▓▓▓▓▓▓█             ║\n"
-                "║      █▓▓▓▓▓▓▓▓▓▓▓▓▓▓█            ║\n"
-                "║      ██████████████████           ║\n"
-                "╚═══════════════════════════════════╝\n"
-                "```"
-            ),
+            title=f"{self.EMOJIS['sparkle']} Ouverture du Coffre... {self.EMOJIS['sparkle']}",
+            description=self._create_chest_art(),
             color=0xFFD700
         )
-        opening_embed.set_image(url=self.CHEST_OPENING_GIFS["opening"])
+        if self.GIFS["chest_opening"] != "REMPLACE_PAR_TON_GIF":
+            opening_embed.set_image(url=self.GIFS["chest_opening"])
+        
         await interaction.response.send_message(embed=opening_embed)
+        await asyncio.sleep(2)
 
-        # Attendre pour l'animation
-        await asyncio.sleep(2.5)
-
-        # Ouvrir le coffre (logique)
+        # Logique d'ouverture
         success = player.open_chest(paid=payer and not player.can_open_free_chest())
         if not success:
-            error_embed = discord.Embed(
-                title="❌ Erreur",
-                description="Une erreur est survenue lors de l'ouverture.",
-                color=0xFF0000
-            )
-            await interaction.edit_original_response(embed=error_embed)
+            await interaction.edit_original_response(embed=self._create_error_embed("Erreur", "Impossible d'ouvrir le coffre."))
             return
 
-        # Tirer un objet
         item = self.chest.open()
         if not item:
-            error_embed = discord.Embed(
-                title="❌ Erreur",
-                description="Aucun objet disponible.",
-                color=0xFF0000
-            )
-            await interaction.edit_original_response(embed=error_embed)
+            await interaction.edit_original_response(embed=self._create_error_embed("Erreur", "Aucun objet disponible."))
             return
 
-        # Ajouter l'objet à l'inventaire
         player.add_item(item.item_id)
         self.data.save_player(player)
 
-        # Phase 2: Révélation avec animation selon rareté
-        rarity_gif = self.CHEST_OPENING_GIFS.get(item.rarity, self.CHEST_OPENING_GIFS[Rarity.NORMAL])
-        
+        # ═══ PHASE 2: Révélation selon rareté ═══
         reveal_embed = discord.Embed(
             title=self._get_reveal_title(item.rarity),
-            color=self.RARITY_COLORS.get(item.rarity, 0x9e9e9e)
+            color=self.COLORS.get(item.rarity, 0x9e9e9e)
         )
-        reveal_embed.set_image(url=rarity_gif)
-        await interaction.edit_original_response(embed=reveal_embed)
+        gif_key = f"chest_{item.rarity.name.lower()}"
+        if self.GIFS.get(gif_key) and self.GIFS[gif_key] != "REMPLACE_PAR_TON_GIF":
+            reveal_embed.set_image(url=self.GIFS[gif_key])
         
+        await interaction.edit_original_response(embed=reveal_embed)
         await asyncio.sleep(1.5)
 
-        # Phase 3: Affichage final de l'objet
-        final_embed = self._create_reward_embed(item, player)
+        # ═══ PHASE 3: Affichage final ═══
+        final_embed = self._create_item_reveal_embed(item, player)
         await interaction.edit_original_response(embed=final_embed)
 
+    def _create_chest_art(self) -> str:
+        """Art ASCII du coffre."""
+        return (
+            "```\n"
+            "    ╔═══════════════════════╗\n"
+            "    ║  ┌─────────────────┐  ║\n"
+            "    ║  │  ▄▄▄▄▄▄▄▄▄▄▄▄▄  │  ║\n"
+            "    ║  │  █████████████  │  ║\n"
+            "    ║  │  █▓▓▓▓▓▓▓▓▓▓▓█  │  ║\n"
+            "    ║  │  █▓▓▓ 🔒 ▓▓▓█  │  ║\n"
+            "    ║  │  █▓▓▓▓▓▓▓▓▓▓▓█  │  ║\n"
+            "    ║  │  █████████████  │  ║\n"
+            "    ║  └─────────────────┘  ║\n"
+            "    ╚═══════════════════════╝\n"
+            "```"
+        )
+
     def _get_reveal_title(self, rarity: Rarity) -> str:
-        """Retourne un titre de révélation selon la rareté."""
+        """Titre selon la rareté."""
         titles = {
             Rarity.NORMAL: "📦 Un objet apparaît...",
-            Rarity.RARE: "💎 Quelque chose de rare brille...",
-            Rarity.EPIC: "🌟 Une aura épique émane du coffre !",
-            Rarity.LEGENDARY: "⚡ LÉGENDAIRE ! Le coffre explose de lumière !",
-            Rarity.MYTHIC: "🔥 MYTHIQUE !! UN TRÉSOR INCROYABLE !!!"
+            Rarity.RARE: "💎 Quelque chose de RARE brille !",
+            Rarity.EPIC: "🌟 EPIC ! Une aura violette émane !",
+            Rarity.LEGENDARY: "⚡ LÉGENDAIRE !! Lumière dorée !!",
+            Rarity.MYTHIC: "🔥🔥 MYTHIQUE !!! INCROYABLE !!! 🔥🔥"
         }
         return titles.get(rarity, "📦 Un objet apparaît...")
 
-    def _create_reward_embed(self, item, player) -> discord.Embed:
-        """Crée l'embed stylisé d'affichage de la récompense."""
-        color = self.RARITY_COLORS.get(item.rarity, 0x9e9e9e)
+    def _create_item_reveal_embed(self, item, player) -> discord.Embed:
+        """Embed de révélation d'objet."""
+        color = self.COLORS.get(item.rarity, 0x9e9e9e)
         
-        # Créer le cadre décoratif selon la rareté
-        if item.rarity == Rarity.MYTHIC:
-            title = f"🔥 MYTHIQUE ! 🔥 {item.name} 🔥 MYTHIQUE ! 🔥"
-        elif item.rarity == Rarity.LEGENDARY:
-            title = f"⭐ LÉGENDAIRE ⭐ {item.name}"
-        elif item.rarity == Rarity.EPIC:
-            title = f"💜 EPIC 💜 {item.name}"
-        elif item.rarity == Rarity.RARE:
-            title = f"💙 RARE 💙 {item.name}"
-        else:
-            title = f"📦 {item.name}"
-
+        # Titre stylisé selon rareté
+        rarity_decorations = {
+            Rarity.NORMAL: ("", ""),
+            Rarity.RARE: ("💎 ", " 💎"),
+            Rarity.EPIC: ("🌟 ", " 🌟"),
+            Rarity.LEGENDARY: ("⭐ ", " ⭐"),
+            Rarity.MYTHIC: ("🔥 ", " 🔥"),
+        }
+        prefix, suffix = rarity_decorations.get(item.rarity, ("", ""))
+        
         embed = discord.Embed(
-            title=title,
+            title=f"{prefix}{item.name}{suffix}",
             color=color
         )
 
-        # Zone d'information principale
-        info_box = (
-            f"```ansi\n"
-            f"\u001b[1;37m╔══════════════════════════════════╗\u001b[0m\n"
-            f"\u001b[1;37m║\u001b[0m  {item.rarity.emoji} Rareté: \u001b[1;33m{item.rarity.display_name}\u001b[0m\n"
-            f"\u001b[1;37m║\u001b[0m  💰 Valeur: \u001b[1;32m{item.value:,} pièces\u001b[0m\n"
-            f"\u001b[1;37m║\u001b[0m  📁 Catégorie: \u001b[1;36m{item.category}\u001b[0m\n"
-            f"\u001b[1;37m╚══════════════════════════════════╝\u001b[0m\n"
-            f"```"
-        )
-        
+        # Info box stylisée
         embed.add_field(
-            name="📋 Informations",
-            value=info_box,
-            inline=False
+            name="╔══ 📋 Informations ══╗",
+            value=(
+                f"```yml\n"
+                f"Rareté: {item.rarity.display_name}\n"
+                f"Valeur: {item.value:,} pièces\n"
+                f"Catégorie: {item.category}\n"
+                f"```"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="╔══ 📊 Stats ══╗",
+            value=(
+                f"```yml\n"
+                f"Coffres: {player.get_remaining_free_chests()}/50\n"
+                f"Solde: {player.coins:,}\n"
+                f"Total: {player.total_chests_opened}\n"
+                f"```"
+            ),
+            inline=True
         )
 
         embed.add_field(
@@ -230,57 +256,58 @@ class Economy(commands.Cog):
             inline=False
         )
 
-        # Statistiques du joueur
-        stats_box = (
-            f"```\n"
-            f"🎁 Coffres restants: {player.get_remaining_free_chests()}/{player.MAX_DAILY_CHESTS}\n"
-            f"💰 Solde actuel: {player.coins:,} pièces\n"
-            f"📦 Total ouverts: {player.total_chests_opened}\n"
-            f"```"
-        )
+        # Barre de rareté visuelle
         embed.add_field(
-            name="📊 Tes Statistiques",
-            value=stats_box,
+            name="✨ Rareté",
+            value=self._create_rarity_bar(item.rarity),
             inline=False
         )
 
-        # Ajouter une image selon la catégorie
-        thumbnail = self.CATEGORY_IMAGES.get(item.category, self.RARITY_IMAGES.get(item.rarity))
-        if thumbnail:
-            embed.set_thumbnail(url=thumbnail)
-
-        embed.set_footer(text=f"🎮 Utilise /inventaire pour voir ta collection !")
+        embed.set_footer(text=f"{item.rarity.emoji} {item.rarity.display_name} • /inventaire pour voir ta collection")
         
         return embed
 
-    # ==================== COMMANDE INVENTAIRE ====================
+    def _create_rarity_bar(self, rarity: Rarity) -> str:
+        """Crée une barre visuelle de rareté."""
+        levels = {
+            Rarity.NORMAL: 1,
+            Rarity.RARE: 2,
+            Rarity.EPIC: 3,
+            Rarity.LEGENDARY: 4,
+            Rarity.MYTHIC: 5
+        }
+        level = levels.get(rarity, 1)
+        filled = "◆" * level
+        empty = "◇" * (5 - level)
+        return f"`[{filled}{empty}]` {rarity.emoji} {rarity.display_name}"
 
-    @app_commands.command(name="inventaire", description="📦 Affiche ta collection d'objets")
-    @app_commands.describe(page="Page de l'inventaire (10 objets par page)")
+    # ══════════════════════════════════════════════════════════════
+    # 🎒 COMMANDE INVENTAIRE
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="inventaire", description="🎒 Affiche ta collection")
+    @app_commands.describe(page="Page de l'inventaire")
     async def inventory(self, interaction: discord.Interaction, page: Optional[int] = 1):
-        """Affiche l'inventaire stylisé du joueur."""
+        """Affiche l'inventaire stylisé."""
         player = self.data.get_player(interaction.user.id)
         
         if not player.inventory:
             embed = discord.Embed(
-                title="📦 Inventaire Vide",
-                description=(
-                    "```\n"
-                    "╔═══════════════════════════════════╗\n"
-                    "║                                   ║\n"
-                    "║     🕳️  Aucun objet trouvé...     ║\n"
-                    "║                                   ║\n"
-                    "╚═══════════════════════════════════╝\n"
-                    "```\n"
-                    "💡 **Astuce:** Utilise `/coffre` pour obtenir des objets !"
-                ),
-                color=0x9e9e9e
+                title=f"{self.EMOJIS['inventory']} Inventaire de {interaction.user.display_name}",
+                description=self._create_empty_inventory_art(),
+                color=self.COLORS["info"]
             )
-            embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3k5cHh4czBvNnVmYjJ4YWRobTVqZXBrMGdvcG5leXl4cXo0aXMzbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/hpXxJ78YtpT0s/giphy.gif")
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed.add_field(
+                name="💡 Astuce",
+                value="Utilise `/coffre` pour obtenir des objets !",
+                inline=False
+            )
+            if self.GIFS["empty"] != "REMPLACE_PAR_TON_GIF":
+                embed.set_thumbnail(url=self.GIFS["empty"])
+            await interaction.response.send_message(embed=embed)
             return
 
-        # Préparer les objets avec leurs détails
+        # Préparer les données
         items_list = []
         total_value = 0
         rarity_counts = {r: 0 for r in Rarity}
@@ -292,157 +319,194 @@ class Economy(commands.Cog):
                 total_value += item.value * quantity
                 rarity_counts[item.rarity] += quantity
 
-        # Trier par rareté (du plus rare au moins rare)
+        # Trier par rareté
         rarity_order = {Rarity.MYTHIC: 0, Rarity.LEGENDARY: 1, Rarity.EPIC: 2, Rarity.RARE: 3, Rarity.NORMAL: 4}
         items_list.sort(key=lambda x: rarity_order.get(x[0].rarity, 5))
 
         # Pagination
-        items_per_page = 10
+        items_per_page = 8
         total_pages = max(1, (len(items_list) + items_per_page - 1) // items_per_page)
         page = max(1, min(page, total_pages))
-        
         start_idx = (page - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        page_items = items_list[start_idx:end_idx]
+        page_items = items_list[start_idx:start_idx + items_per_page]
 
         embed = discord.Embed(
-            title=f"🎒 Inventaire de {interaction.user.display_name}",
-            color=0x3498db
+            title=f"{self.EMOJIS['inventory']} Inventaire de {interaction.user.display_name}",
+            color=self.COLORS["info"]
         )
 
-        # Construire la liste des objets de façon stylisée
+        # Liste des objets
         items_text = ""
-        for item, quantity in page_items:
-            value_total = item.value * quantity
-            items_text += f"{item.rarity.emoji} **{item.name}** ×{quantity}\n"
-            items_text += f"┗━ 💰 {value_total:,} pièces\n"
+        for item, qty in page_items:
+            items_text += f"{item.rarity.emoji} **{item.name}** `×{qty}`\n"
+            items_text += f"╰➤ {item.value * qty:,} {self.EMOJIS['coin']}\n"
 
         embed.add_field(
-            name=f"📦 Objets (Page {page}/{total_pages})",
+            name=f"📦 Objets ({len(items_list)} uniques)",
             value=items_text or "Aucun objet",
             inline=False
         )
 
-        # Statistiques de collection
-        rarity_stats = ""
+        # Stats par rareté
+        rarity_text = ""
         for rarity in Rarity:
             if rarity_counts[rarity] > 0:
-                rarity_stats += f"{rarity.emoji} {rarity.display_name}: **{rarity_counts[rarity]}**\n"
-
-        if rarity_stats:
-            embed.add_field(
-                name="📊 Collection par Rareté",
-                value=rarity_stats,
-                inline=True
-            )
-
-        # Résumé économique
-        summary = (
-            f"📦 **Objets uniques:** {len(player.inventory)}\n"
-            f"💎 **Valeur totale:** {total_value:,} 💰\n"
-            f"💰 **Solde:** {player.coins:,} 💰"
-        )
+                rarity_text += f"{rarity.emoji} `{rarity_counts[rarity]:>3}` "
+        
         embed.add_field(
-            name="💼 Résumé",
-            value=summary,
+            name="📊 Par Rareté",
+            value=rarity_text or "Aucun",
+            inline=True
+        )
+
+        # Résumé
+        embed.add_field(
+            name=f"{self.EMOJIS['coin']} Valeur",
+            value=f"`{total_value:,}` pièces",
+            inline=True
+        )
+
+        embed.add_field(
+            name="💰 Solde",
+            value=f"`{player.coins:,}` pièces",
             inline=True
         )
 
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-        embed.set_footer(text=f"📖 Page {page}/{total_pages} • /inventaire page:{page+1 if page < total_pages else 1}")
+        embed.set_footer(text=f"📄 Page {page}/{total_pages} • /inventaire page:{page + 1 if page < total_pages else 1}")
+
+        if self.GIFS["inventory"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_image(url=self.GIFS["inventory"])
 
         await interaction.response.send_message(embed=embed)
 
-    # ==================== COMMANDE VENDRE ====================
+    def _create_empty_inventory_art(self) -> str:
+        """Art ASCII inventaire vide."""
+        return (
+            "```\n"
+            "  ╔═══════════════════════════╗\n"
+            "  ║                           ║\n"
+            "  ║      📦 INVENTAIRE        ║\n"
+            "  ║          VIDE             ║\n"
+            "  ║                           ║\n"
+            "  ║      ┌───────────┐        ║\n"
+            "  ║      │  (vide)   │        ║\n"
+            "  ║      └───────────┘        ║\n"
+            "  ║                           ║\n"
+            "  ╚═══════════════════════════╝\n"
+            "```"
+        )
 
-    @app_commands.command(name="vendre", description="💸 Vend un objet de ton inventaire")
-    @app_commands.describe(
-        objet="Nom de l'objet à vendre",
-        quantite="Nombre d'objets à vendre (défaut: 1)"
-    )
+    # ══════════════════════════════════════════════════════════════
+    # 💸 COMMANDE VENDRE
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="vendre", description="💸 Vend un objet")
+    @app_commands.describe(objet="Nom de l'objet", quantite="Quantité à vendre")
     async def sell(self, interaction: discord.Interaction, objet: str, quantite: Optional[int] = 1):
-        """Vend un objet de l'inventaire avec animation."""
+        """Vend un objet avec animation."""
         player = self.data.get_player(interaction.user.id)
         
-        # Rechercher l'objet par son nom
+        # Rechercher l'objet
         item = None
         for item_id in player.inventory:
-            potential_item = self.data.get_item(item_id)
-            if potential_item and potential_item.name.lower() == objet.lower():
-                item = potential_item
+            potential = self.data.get_item(item_id)
+            if potential and potential.name.lower() == objet.lower():
+                item = potential
                 break
 
         if not item:
-            embed = discord.Embed(
-                title="❌ Objet Introuvable",
-                description=(
-                    f"```diff\n"
-                    f"- Objet \"{objet}\" non trouvé dans ton inventaire\n"
-                    f"```\n"
-                    f"💡 Utilise `/inventaire` pour voir tes objets."
-                ),
-                color=0xFF6B6B
+            embed = self._create_error_embed(
+                "❌ Objet Introuvable",
+                f"L'objet **{objet}** n'est pas dans ton inventaire.\n\n"
+                f"💡 Utilise `/inventaire` pour voir tes objets."
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # Vérifier la quantité
         available = player.inventory.get(item.item_id, 0)
         if quantite <= 0 or quantite > available:
-            embed = discord.Embed(
-                title="❌ Quantité Invalide",
-                description=(
-                    f"```diff\n"
-                    f"- Demandé: {quantite}x {item.name}\n"
-                    f"+ Disponible: {available}x {item.name}\n"
-                    f"```"
-                ),
-                color=0xFF6B6B
+            embed = self._create_error_embed(
+                "❌ Quantité Invalide",
+                f"```diff\n"
+                f"- Demandé: {quantite}×\n"
+                f"+ Disponible: {available}×\n"
+                f"```"
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         # Effectuer la vente
-        total_coins = item.value * quantite
+        total = item.value * quantite
         old_balance = player.coins
         player.sell_item(item.item_id, item.value, quantite)
         self.data.save_player(player)
 
-        # Créer l'embed de confirmation stylisé
         embed = discord.Embed(
-            title="💰 Vente Réussie !",
-            color=0x2ECC71
+            title=f"{self.EMOJIS['check']} Vente Réussie !",
+            color=self.COLORS["success"]
         )
 
-        transaction_box = (
-            f"```diff\n"
-            f"+ TRANSACTION COMPLÈTE\n"
-            f"```\n"
-            f"**{item.rarity.emoji} {item.name}** ×{quantite}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💵 Prix unitaire: **{item.value:,}** 💰\n"
-            f"📦 Quantité vendue: **{quantite}**\n"
-            f"💎 **Total reçu: +{total_coins:,}** 💰"
+        embed.add_field(
+            name="📦 Objet Vendu",
+            value=(
+                f"{item.rarity.emoji} **{item.name}** `×{quantite}`\n"
+                f"╰➤ Prix unitaire: `{item.value:,}` {self.EMOJIS['coin']}"
+            ),
+            inline=False
         )
-        embed.add_field(name="📋 Détails", value=transaction_box, inline=False)
 
-        balance_box = (
-            f"```\n"
-            f"Avant: {old_balance:,} 💰\n"
-            f"Après: {player.coins:,} 💰 (+{total_coins:,})\n"
-            f"```"
+        embed.add_field(
+            name=f"{self.EMOJIS['coin']} Transaction",
+            value=(
+                f"```diff\n"
+                f"+ {total:,} pièces reçues\n"
+                f"```"
+            ),
+            inline=True
         )
-        embed.add_field(name="💼 Nouveau Solde", value=balance_box, inline=False)
 
-        embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWtxNGN0MjRxYTd4cmZnNjFmMGtvdDQxdjBiZTk1cjdmYzN3d2N6eiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0HlNQ03J5JxX6lva/giphy.gif")
-        embed.set_footer(text="💡 Continue à vendre pour acheter plus de coffres !")
+        embed.add_field(
+            name="💼 Nouveau Solde",
+            value=(
+                f"```yml\n"
+                f"Avant: {old_balance:,}\n"
+                f"Après: {player.coins:,}\n"
+                f"```"
+            ),
+            inline=True
+        )
+
+        if self.GIFS["sell"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["sell"])
+
+        embed.set_footer(text="💡 Continue à vendre pour acheter des coffres !")
 
         await interaction.response.send_message(embed=embed)
 
-    # ==================== COMMANDE VENDRE TOUT ====================
+    @sell.autocomplete('objet')
+    async def sell_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplétion pour la vente."""
+        player = self.data.get_player(interaction.user.id)
+        choices = []
+        for item_id in player.inventory:
+            item = self.data.get_item(item_id)
+            if item and (not current or current.lower() in item.name.lower()):
+                qty = player.inventory[item_id]
+                choices.append(
+                    app_commands.Choice(
+                        name=f"{item.rarity.emoji} {item.name} (×{qty}) - {item.value:,}💰",
+                        value=item.name
+                    )
+                )
+        return choices[:25]
+
+    # ══════════════════════════════════════════════════════════════
+    # 💸 COMMANDE VENDRE TOUT
+    # ══════════════════════════════════════════════════════════════
 
     @app_commands.command(name="vendretout", description="💸 Vend tous les objets d'une rareté")
-    @app_commands.describe(rarete="Rareté des objets à vendre")
+    @app_commands.describe(rarete="Rareté à vendre")
     @app_commands.choices(rarete=[
         app_commands.Choice(name="⬜ Normal", value="NORMAL"),
         app_commands.Choice(name="🟦 Rare", value="RARE"),
@@ -451,149 +515,155 @@ class Economy(commands.Cog):
         app_commands.Choice(name="🟥 Mythique", value="MYTHIC")
     ])
     async def sell_all(self, interaction: discord.Interaction, rarete: str):
-        """Vend tous les objets d'une rareté spécifique."""
+        """Vend tous les objets d'une rareté."""
         player = self.data.get_player(interaction.user.id)
-        
-        try:
-            target_rarity = Rarity[rarete]
-        except KeyError:
-            await interaction.response.send_message("❌ Rareté invalide.", ephemeral=True)
-            return
+        target_rarity = Rarity[rarete]
 
-        # Trouver tous les objets de cette rareté
         items_to_sell = []
-        for item_id, quantity in list(player.inventory.items()):
+        for item_id, qty in list(player.inventory.items()):
             item = self.data.get_item(item_id)
             if item and item.rarity == target_rarity:
-                items_to_sell.append((item, quantity))
+                items_to_sell.append((item, qty))
 
         if not items_to_sell:
-            embed = discord.Embed(
-                title="📦 Aucun Objet à Vendre",
-                description=f"Tu n'as aucun objet {target_rarity.emoji} **{target_rarity.display_name}**.",
-                color=0xFF6B6B
+            embed = self._create_error_embed(
+                "📦 Aucun Objet",
+                f"Tu n'as aucun objet {target_rarity.emoji} **{target_rarity.display_name}**."
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # Calculer et effectuer la vente
         total_items = 0
         total_coins = 0
         old_balance = player.coins
 
-        for item, quantity in items_to_sell:
-            player.sell_item(item.item_id, item.value, quantity)
-            total_items += quantity
-            total_coins += item.value * quantity
+        for item, qty in items_to_sell:
+            player.sell_item(item.item_id, item.value, qty)
+            total_items += qty
+            total_coins += item.value * qty
 
         self.data.save_player(player)
 
         embed = discord.Embed(
-            title="🎉 Vente Massive Réussie !",
-            color=self.RARITY_COLORS.get(target_rarity, 0x2ECC71)
+            title=f"{self.EMOJIS['check']} Vente Massive !",
+            color=self.COLORS.get(target_rarity, self.COLORS["success"])
         )
 
-        summary_box = (
-            f"```diff\n"
-            f"+ VENTE EN GROS COMPLÉTÉE\n"
-            f"```\n"
-            f"{target_rarity.emoji} **{total_items}** objets {target_rarity.display_name} vendus\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💎 **Total reçu: +{total_coins:,}** 💰"
+        embed.add_field(
+            name="📦 Objets Vendus",
+            value=f"{target_rarity.emoji} **{total_items}** objets {target_rarity.display_name}",
+            inline=False
         )
-        embed.add_field(name="📋 Résumé", value=summary_box, inline=False)
 
-        balance_box = (
-            f"```\n"
-            f"Avant: {old_balance:,} 💰\n"
-            f"Après: {player.coins:,} 💰 (+{total_coins:,})\n"
-            f"```"
+        embed.add_field(
+            name=f"{self.EMOJIS['coin']} Gains",
+            value=f"```diff\n+ {total_coins:,} pièces\n```",
+            inline=True
         )
-        embed.add_field(name="💼 Nouveau Solde", value=balance_box, inline=False)
 
-        embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWtxNGN0MjRxYTd4cmZnNjFmMGtvdDQxdjBiZTk1cjdmYzN3d2N6eiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0HlNQ03J5JxX6lva/giphy.gif")
+        embed.add_field(
+            name="💼 Solde",
+            value=f"```yml\nAvant: {old_balance:,}\nAprès: {player.coins:,}\n```",
+            inline=True
+        )
+
+        if self.GIFS["sell"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["sell"])
 
         await interaction.response.send_message(embed=embed)
 
-    # ==================== COMMANDE PROFIL ====================
+    # ══════════════════════════════════════════════════════════════
+    # 👤 COMMANDE PROFIL
+    # ══════════════════════════════════════════════════════════════
 
-    @app_commands.command(name="profil", description="👤 Affiche ton profil et tes statistiques")
-    @app_commands.describe(membre="Membre dont afficher le profil")
+    @app_commands.command(name="profil", description="👤 Affiche ton profil")
+    @app_commands.describe(membre="Joueur à afficher")
     async def profile(self, interaction: discord.Interaction, membre: Optional[discord.Member] = None):
-        """Affiche le profil stylisé d'un joueur."""
+        """Affiche le profil stylisé."""
         target = membre or interaction.user
         player = self.data.get_player(target.id)
 
-        # Calculer les statistiques
+        # Calculs
         total_items = sum(player.inventory.values())
         unique_items = len(player.inventory)
-        
-        # Valeur totale de l'inventaire
         inventory_value = 0
         rarity_counts = {r: 0 for r in Rarity}
-        for item_id, quantity in player.inventory.items():
+        
+        for item_id, qty in player.inventory.items():
             item = self.data.get_item(item_id)
             if item:
-                inventory_value += item.value * quantity
-                rarity_counts[item.rarity] += quantity
+                inventory_value += item.value * qty
+                rarity_counts[item.rarity] += qty
 
-        # Déterminer le rang du joueur
-        rank_emoji, rank_name = self._get_player_rank(player.coins + inventory_value)
+        total_wealth = player.coins + inventory_value
+        rank_emoji, rank_name = self._get_rank(total_wealth)
 
         embed = discord.Embed(
-            title=f"{rank_emoji} Profil de {target.display_name}",
-            color=0x3498db
+            title=f"{rank_emoji} {target.display_name}",
+            color=self.COLORS["profile"]
         )
         embed.set_thumbnail(url=target.display_avatar.url)
 
         # Bannière de rang
         embed.description = (
             f"```ansi\n"
-            f"\u001b[1;33m╔══════════════════════════════════╗\u001b[0m\n"
-            f"\u001b[1;33m║\u001b[0m      🏆 Rang: \u001b[1;36m{rank_name}\u001b[0m\n"
-            f"\u001b[1;33m╚══════════════════════════════════╝\u001b[0m\n"
+            f"\u001b[1;33m╔════════════════════════════╗\u001b[0m\n"
+            f"\u001b[1;33m║\u001b[0m   🏆 Rang: \u001b[1;36m{rank_name}\u001b[0m\n"
+            f"\u001b[1;33m╚════════════════════════════╝\u001b[0m\n"
             f"```"
         )
 
         # Économie
-        economy_box = (
-            f"💰 **Solde:** {player.coins:,} pièces\n"
-            f"📦 **Valeur inventaire:** {inventory_value:,} pièces\n"
-            f"💎 **Richesse totale:** {player.coins + inventory_value:,} pièces"
+        embed.add_field(
+            name=f"{self.EMOJIS['coin']} Économie",
+            value=(
+                f"💰 Solde: `{player.coins:,}`\n"
+                f"📦 Inventaire: `{inventory_value:,}`\n"
+                f"💎 Total: `{total_wealth:,}`"
+            ),
+            inline=True
         )
-        embed.add_field(name="💼 Économie", value=economy_box, inline=True)
 
         # Collection
-        collection_box = (
-            f"📦 **Objets totaux:** {total_items}\n"
-            f"🎯 **Objets uniques:** {unique_items}\n"
-            f"🏷️ **Objets vendus:** {player.total_items_sold}"
+        embed.add_field(
+            name=f"{self.EMOJIS['inventory']} Collection",
+            value=(
+                f"📦 Objets: `{total_items}`\n"
+                f"🎯 Uniques: `{unique_items}`\n"
+                f"🏷️ Vendus: `{player.total_items_sold}`"
+            ),
+            inline=True
         )
-        embed.add_field(name="🎒 Collection", value=collection_box, inline=True)
 
         # Coffres
-        chests_box = (
-            f"🎁 **Aujourd'hui:** {player.daily_chests_opened}/{player.MAX_DAILY_CHESTS}\n"
-            f"📊 **Total ouverts:** {player.total_chests_opened}"
+        embed.add_field(
+            name=f"{self.EMOJIS['chest']} Coffres",
+            value=(
+                f"📅 Aujourd'hui: `{player.daily_chests_opened}/50`\n"
+                f"📊 Total: `{player.total_chests_opened}`"
+            ),
+            inline=True
         )
-        embed.add_field(name="📦 Coffres", value=chests_box, inline=True)
 
-        # Répartition par rareté
-        rarity_text = ""
+        # Graphique de rareté
+        rarity_bar = ""
         for rarity in Rarity:
             count = rarity_counts[rarity]
-            bar_length = min(10, count // 5) if count > 0 else 0
-            bar = "█" * bar_length + "░" * (10 - bar_length)
-            rarity_text += f"{rarity.emoji} `{bar}` {count}\n"
+            bar_len = min(8, count // 3) if count > 0 else 0
+            bar = "█" * bar_len + "░" * (8 - bar_len)
+            rarity_bar += f"{rarity.emoji} `{bar}` {count}\n"
         
-        embed.add_field(name="📊 Répartition", value=rarity_text, inline=False)
+        embed.add_field(name="📊 Collection", value=rarity_bar, inline=False)
 
-        embed.set_footer(text="🎮 Ouvre des coffres pour améliorer ta collection !")
+        if self.GIFS["profile"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_image(url=self.GIFS["profile"])
+
+        embed.set_footer(text="🎮 Ouvre des coffres pour progresser !")
 
         await interaction.response.send_message(embed=embed)
 
-    def _get_player_rank(self, total_wealth: int) -> tuple:
-        """Détermine le rang du joueur selon sa richesse totale."""
+    def _get_rank(self, wealth: int) -> tuple:
+        """Retourne emoji et nom du rang."""
         ranks = [
             (1000000, "👑", "Empereur Légendaire"),
             (500000, "🏆", "Grand Maître"),
@@ -606,185 +676,567 @@ class Economy(commands.Cog):
             (0, "🌱", "Débutant")
         ]
         for threshold, emoji, name in ranks:
-            if total_wealth >= threshold:
+            if wealth >= threshold:
                 return emoji, name
         return "🌱", "Débutant"
 
-    # ==================== COMMANDE CLASSEMENT ====================
+    # ══════════════════════════════════════════════════════════════
+    # 🏆 COMMANDE CLASSEMENT
+    # ══════════════════════════════════════════════════════════════
 
-    @app_commands.command(name="classement", description="🏆 Affiche le classement des joueurs")
+    @app_commands.command(name="classement", description="🏆 Top des joueurs")
     @app_commands.describe(type="Type de classement")
     @app_commands.choices(type=[
-        app_commands.Choice(name="💰 Richesse (pièces)", value="coins"),
-        app_commands.Choice(name="📦 Collection (objets uniques)", value="collection")
+        app_commands.Choice(name="💰 Richesse", value="coins"),
+        app_commands.Choice(name="📦 Collection", value="collection")
     ])
     async def leaderboard(self, interaction: discord.Interaction, type: Optional[str] = "coins"):
-        """Affiche le classement stylisé des joueurs."""
+        """Affiche le classement."""
         if type == "collection":
             players = self.data.get_collection_leaderboard(10)
-            title = "🏆 Top Collectionneurs"
+            title = f"{self.EMOJIS['trophy']} Top Collectionneurs"
+            icon = "📦"
         else:
             players = self.data.get_leaderboard(10)
-            title = "🏆 Top Richesse"
+            title = f"{self.EMOJIS['trophy']} Top Richesse"
+            icon = "💰"
 
-        embed = discord.Embed(
-            title=title,
-            color=0xFFD700
-        )
+        embed = discord.Embed(title=title, color=0xFFD700)
 
         if not players:
             embed.description = "```\nAucun joueur n'a encore joué !\n```"
             await interaction.response.send_message(embed=embed)
             return
 
-        leaderboard_text = "```\n"
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+        
+        leaderboard_text = "```\n"
+        leaderboard_text += "╔═══╤═══════════════╤════════════╗\n"
+        leaderboard_text += "║ # │ Joueur        │ Score      ║\n"
+        leaderboard_text += "╠═══╪═══════════════╪════════════╣\n"
 
-        for i, player in enumerate(players):
+        for i, p in enumerate(players):
             try:
-                user = await self.bot.fetch_user(player.user_id)
-                username = user.display_name[:15]
+                user = await self.bot.fetch_user(p.user_id)
+                name = user.display_name[:13]
             except:
-                username = f"Joueur #{player.user_id}"[:15]
+                name = f"Joueur#{p.user_id}"[:13]
 
-            medal = medals[i] if i < len(medals) else f"#{i+1}"
-            
             if type == "collection":
-                value = len(player.inventory)
-                leaderboard_text += f"{medal} {username:<15} │ {value:>5} objets\n"
+                score = f"{len(p.inventory)} obj"
             else:
-                leaderboard_text += f"{medal} {username:<15} │ {player.coins:>8,} 💰\n"
+                score = f"{p.coins:,}"
 
+            leaderboard_text += f"║ {i+1} │ {name:<13} │ {score:>10} ║\n"
+
+        leaderboard_text += "╚═══╧═══════════════╧════════════╝\n"
         leaderboard_text += "```"
+
         embed.description = leaderboard_text
 
+        if self.GIFS["leaderboard"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["leaderboard"])
+
         embed.set_footer(text="🎮 Joue pour monter dans le classement !")
-        embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdHRhbGFtdmZ0ZGRwY2Zja2xhNnVwaGdvaTFkbHhzNXl0aGlqeXdpcSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26BRzozg4TCBXv6QU/giphy.gif")
 
         await interaction.response.send_message(embed=embed)
 
-    # ==================== COMMANDE TAUX ====================
+    # ══════════════════════════════════════════════════════════════
+    # 📊 COMMANDE TAUX
+    # ══════════════════════════════════════════════════════════════
 
-    @app_commands.command(name="taux", description="📊 Affiche les taux de drop des coffres")
+    @app_commands.command(name="taux", description="📊 Taux de drop")
     async def drop_rates(self, interaction: discord.Interaction):
-        """Affiche les taux de drop stylisés."""
+        """Affiche les taux de drop."""
         embed = discord.Embed(
-            title="🎰 Taux de Drop des Coffres",
-            description=(
-                "```\n"
-                "╔═══════════════════════════════════╗\n"
-                "║   PROBABILITÉS D'OBTENTION        ║\n"
-                "╚═══════════════════════════════════╝\n"
-                "```"
-            ),
-            color=0x9B59B6
+            title="🎰 Taux de Drop",
+            color=self.COLORS["info"]
+        )
+
+        embed.description = (
+            "```\n"
+            "╔═════════════════════════════════╗\n"
+            "║   PROBABILITÉS D'OBTENTION      ║\n"
+            "╚═════════════════════════════════╝\n"
+            "```"
         )
 
         for rarity in Rarity:
-            percentage = rarity.drop_rate * 100
-            bar_filled = int(percentage / 5)
-            bar = "▓" * bar_filled + "░" * (20 - bar_filled)
+            pct = rarity.drop_rate * 100
+            bar_len = int(pct / 2.5)
+            bar = "▓" * bar_len + "░" * (20 - bar_len)
             
             embed.add_field(
                 name=f"{rarity.emoji} {rarity.display_name}",
-                value=(
-                    f"```\n"
-                    f"[{bar}] {percentage:.1f}%\n"
-                    f"Valeur: {rarity.base_value:,}+ 💰\n"
-                    f"```"
-                ),
+                value=f"`[{bar}]` **{pct:.1f}%**\n💰 Valeur: `{rarity.base_value:,}+`",
                 inline=False
             )
 
         embed.add_field(
-            name="💡 Info",
+            name="📋 Infos",
             value=(
-                f"```\n"
-                f"🎁 Coffres gratuits/jour: 50\n"
-                f"💎 Coût coffre bonus: 3,500 💰\n"
+                f"```yml\n"
+                f"Coffres gratuits/jour: 50\n"
+                f"Coût coffre bonus: 3,500\n"
                 f"```"
             ),
             inline=False
         )
 
-        embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcHd4OHZwMnRiMHBhMnVxdWVqNjhqYnVhMnQwY3g5dDdqYzBrZ2FqZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xUOwGdA2o7E4TPJICQ/giphy.gif")
-        embed.set_footer(text="🍀 Bonne chance dans tes tirages !")
-
         await interaction.response.send_message(embed=embed)
 
-    # ==================== COMMANDE BOUTIQUE ====================
+    # ══════════════════════════════════════════════════════════════
+    # 🏪 COMMANDE BOUTIQUE
+    # ══════════════════════════════════════════════════════════════
 
-    @app_commands.command(name="boutique", description="🏪 Affiche la boutique")
+    @app_commands.command(name="boutique", description="🏪 Boutique")
     async def shop(self, interaction: discord.Interaction):
         """Affiche la boutique."""
         player = self.data.get_player(interaction.user.id)
         
         embed = discord.Embed(
-            title="🏪 Boutique",
-            description=(
-                "```\n"
-                "╔═══════════════════════════════════╗\n"
-                "║      BIENVENUE À LA BOUTIQUE      ║\n"
-                "╚═══════════════════════════════════╝\n"
-                "```"
-            ),
-            color=0xE91E63
+            title=f"{self.EMOJIS['shop']} Boutique",
+            color=self.COLORS["shop"]
+        )
+
+        embed.description = (
+            "```\n"
+            "╔═════════════════════════════════╗\n"
+            "║     BIENVENUE À LA BOUTIQUE     ║\n"
+            "╚═════════════════════════════════╝\n"
+            "```"
         )
 
         embed.add_field(
-            name="🎁 Coffre Bonus",
+            name=f"{self.EMOJIS['chest']} Coffre Bonus",
             value=(
-                f"```\n"
-                f"Prix: 3,500 💰\n"
-                f"Commande: /coffre payer:True\n"
-                f"```\n"
-                f"Ouvre un coffre supplémentaire !"
+                f"💎 Prix: `3,500` pièces\n"
+                f"📝 `/coffre payer:True`\n"
+                f"*Ouvre un coffre supplémentaire*"
             ),
             inline=True
         )
 
         embed.add_field(
-            name="💰 Ton Solde",
-            value=f"```\n{player.coins:,} pièces\n```",
+            name=f"{self.EMOJIS['coin']} Ton Solde",
+            value=f"```yml\n{player.coins:,} pièces\n```",
+            inline=True
+        )
+
+        can_buy = "✅ Tu peux acheter !" if player.coins >= 3500 else "❌ Fonds insuffisants"
+        embed.add_field(
+            name="📊 Status",
+            value=can_buy,
             inline=True
         )
 
         embed.add_field(
-            name="💡 Comment gagner des pièces ?",
+            name="💡 Gagner des pièces",
             value=(
-                "• `/coffre` - Ouvre des coffres gratuits\n"
-                "• `/vendre` - Vends tes objets\n"
-                "• `/vendretout` - Vends en masse"
+                f"• `/coffre` - Coffres gratuits\n"
+                f"• `/vendre` - Vends un objet\n"
+                f"• `/vendretout` - Vente en masse"
             ),
             inline=False
         )
 
-        embed.set_thumbnail(url="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWtxNGN0MjRxYTd4cmZnNjFmMGtvdDQxdjBiZTk1cjdmYzN3d2N6eiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0HlNQ03J5JxX6lva/giphy.gif")
+        if self.GIFS["shop"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["shop"])
 
         await interaction.response.send_message(embed=embed)
 
-    # ==================== AUTOCOMPLÉTION ====================
+    # ══════════════════════════════════════════════════════════════
+    # 🔄 SYSTÈME DE TRADE
+    # ══════════════════════════════════════════════════════════════
 
-    @sell.autocomplete('objet')
-    async def sell_autocomplete(self, interaction: discord.Interaction, current: str):
-        """Autocomplétion pour la commande vendre."""
+    @app_commands.command(name="trade", description="🔄 Proposer un échange")
+    @app_commands.describe(
+        joueur="Joueur avec qui échanger",
+        ton_objet="Objet que tu donnes",
+        quantite_donnee="Quantité que tu donnes",
+        objet_demande="Objet que tu veux (optionnel)",
+        quantite_demandee="Quantité demandée",
+        pieces="Pièces à échanger (positif = tu donnes, négatif = tu demandes)"
+    )
+    async def trade(
+        self, 
+        interaction: discord.Interaction, 
+        joueur: discord.Member,
+        ton_objet: str,
+        quantite_donnee: Optional[int] = 1,
+        objet_demande: Optional[str] = None,
+        quantite_demandee: Optional[int] = 1,
+        pieces: Optional[int] = 0
+    ):
+        """Propose un échange avec un autre joueur."""
+        
+        # Vérifications de base
+        if joueur.id == interaction.user.id:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Erreur", "Tu ne peux pas échanger avec toi-même !"),
+                ephemeral=True
+            )
+            return
+
+        if joueur.bot:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Erreur", "Tu ne peux pas échanger avec un bot !"),
+                ephemeral=True
+            )
+            return
+
+        player = self.data.get_player(interaction.user.id)
+        target_player = self.data.get_player(joueur.id)
+
+        # Vérifier l'objet donné
+        given_item = None
+        for item_id in player.inventory:
+            item = self.data.get_item(item_id)
+            if item and item.name.lower() == ton_objet.lower():
+                given_item = item
+                break
+
+        if not given_item:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Objet Introuvable", f"Tu n'as pas **{ton_objet}** dans ton inventaire."),
+                ephemeral=True
+            )
+            return
+
+        if player.inventory.get(given_item.item_id, 0) < quantite_donnee:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Quantité Insuffisante", f"Tu n'as que {player.inventory.get(given_item.item_id, 0)}× {given_item.name}."),
+                ephemeral=True
+            )
+            return
+
+        # Vérifier l'objet demandé (si spécifié)
+        requested_item = None
+        if objet_demande:
+            for item_id in target_player.inventory:
+                item = self.data.get_item(item_id)
+                if item and item.name.lower() == objet_demande.lower():
+                    requested_item = item
+                    break
+
+            if not requested_item:
+                await interaction.response.send_message(
+                    embed=self._create_error_embed("❌ Objet Introuvable", f"**{joueur.display_name}** n'a pas **{objet_demande}**."),
+                    ephemeral=True
+                )
+                return
+
+            if target_player.inventory.get(requested_item.item_id, 0) < quantite_demandee:
+                await interaction.response.send_message(
+                    embed=self._create_error_embed("❌ Quantité Insuffisante", f"**{joueur.display_name}** n'a pas assez de {requested_item.name}."),
+                    ephemeral=True
+                )
+                return
+
+        # Vérifier les pièces
+        if pieces > 0 and player.coins < pieces:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Fonds Insuffisants", f"Tu n'as que {player.coins:,} pièces."),
+                ephemeral=True
+            )
+            return
+
+        if pieces < 0 and target_player.coins < abs(pieces):
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Fonds Insuffisants", f"**{joueur.display_name}** n'a pas assez de pièces."),
+                ephemeral=True
+            )
+            return
+
+        # Créer le trade
+        trade_id = interaction.user.id
+        self.pending_trades[trade_id] = {
+            "sender": interaction.user.id,
+            "receiver": joueur.id,
+            "given_item": given_item,
+            "given_qty": quantite_donnee,
+            "requested_item": requested_item,
+            "requested_qty": quantite_demandee if requested_item else 0,
+            "coins": pieces,
+            "timestamp": datetime.now()
+        }
+
+        # Créer l'embed de proposition
+        embed = discord.Embed(
+            title=f"{self.EMOJIS['trade']} Proposition d'Échange",
+            color=self.COLORS["trade"]
+        )
+
+        embed.description = (
+            f"**{interaction.user.display_name}** propose un échange à **{joueur.display_name}**"
+        )
+
+        # Ce que donne l'initiateur
+        give_text = f"{given_item.rarity.emoji} **{given_item.name}** `×{quantite_donnee}`"
+        if pieces > 0:
+            give_text += f"\n{self.EMOJIS['coin']} `{pieces:,}` pièces"
+        embed.add_field(name=f"📤 {interaction.user.display_name} donne", value=give_text, inline=True)
+
+        # Ce que reçoit l'initiateur
+        receive_text = ""
+        if requested_item:
+            receive_text = f"{requested_item.rarity.emoji} **{requested_item.name}** `×{quantite_demandee}`"
+        if pieces < 0:
+            if receive_text:
+                receive_text += "\n"
+            receive_text += f"{self.EMOJIS['coin']} `{abs(pieces):,}` pièces"
+        if not receive_text:
+            receive_text = "*Rien (cadeau)*"
+        embed.add_field(name=f"📥 {interaction.user.display_name} reçoit", value=receive_text, inline=True)
+
+        embed.add_field(
+            name="⏳ En attente",
+            value=f"**{joueur.mention}**, utilise les boutons ci-dessous !",
+            inline=False
+        )
+
+        if self.GIFS["trade_pending"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["trade_pending"])
+
+        embed.set_footer(text="⏰ Cette offre expire dans 60 secondes")
+
+        # Créer les boutons
+        view = TradeView(self, trade_id, joueur.id)
+        await interaction.response.send_message(embed=embed, view=view)
+
+        # Timeout après 60 secondes
+        await asyncio.sleep(60)
+        if trade_id in self.pending_trades:
+            del self.pending_trades[trade_id]
+            try:
+                timeout_embed = discord.Embed(
+                    title=f"{self.EMOJIS['cross']} Échange Expiré",
+                    description="L'offre n'a pas été acceptée à temps.",
+                    color=self.COLORS["error"]
+                )
+                await interaction.edit_original_response(embed=timeout_embed, view=None)
+            except:
+                pass
+
+    @trade.autocomplete('ton_objet')
+    async def trade_give_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplétion pour l'objet donné."""
         player = self.data.get_player(interaction.user.id)
         choices = []
-
         for item_id in player.inventory:
             item = self.data.get_item(item_id)
             if item and (not current or current.lower() in item.name.lower()):
-                quantity = player.inventory[item_id]
+                qty = player.inventory[item_id]
                 choices.append(
                     app_commands.Choice(
-                        name=f"{item.rarity.emoji} {item.name} (×{quantity}) - {item.value:,} 💰",
+                        name=f"{item.rarity.emoji} {item.name} (×{qty})",
                         value=item.name
                     )
                 )
-
         return choices[:25]
+
+    async def execute_trade(self, trade_id: int, accepted: bool, interaction: discord.Interaction):
+        """Exécute ou annule un trade."""
+        if trade_id not in self.pending_trades:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Erreur", "Cet échange n'existe plus."),
+                ephemeral=True
+            )
+            return
+
+        trade = self.pending_trades[trade_id]
+        
+        if interaction.user.id != trade["receiver"]:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Erreur", "Seul le destinataire peut répondre."),
+                ephemeral=True
+            )
+            return
+
+        del self.pending_trades[trade_id]
+
+        if not accepted:
+            embed = discord.Embed(
+                title=f"{self.EMOJIS['cross']} Échange Refusé",
+                description=f"**{interaction.user.display_name}** a refusé l'échange.",
+                color=self.COLORS["error"]
+            )
+            if self.GIFS["trade_cancel"] != "REMPLACE_PAR_TON_GIF":
+                embed.set_thumbnail(url=self.GIFS["trade_cancel"])
+            await interaction.response.edit_message(embed=embed, view=None)
+            return
+
+        # Exécuter l'échange
+        sender = self.data.get_player(trade["sender"])
+        receiver = self.data.get_player(trade["receiver"])
+
+        # Transférer l'objet donné
+        sender.remove_item(trade["given_item"].item_id, trade["given_qty"])
+        receiver.add_item(trade["given_item"].item_id, trade["given_qty"])
+
+        # Transférer l'objet demandé (si existe)
+        if trade["requested_item"]:
+            receiver.remove_item(trade["requested_item"].item_id, trade["requested_qty"])
+            sender.add_item(trade["requested_item"].item_id, trade["requested_qty"])
+
+        # Transférer les pièces
+        if trade["coins"] > 0:
+            sender.coins -= trade["coins"]
+            receiver.coins += trade["coins"]
+        elif trade["coins"] < 0:
+            receiver.coins -= abs(trade["coins"])
+            sender.coins += abs(trade["coins"])
+
+        self.data.save_player(sender)
+        self.data.save_player(receiver)
+
+        # Message de succès
+        try:
+            sender_user = await self.bot.fetch_user(trade["sender"])
+            sender_name = sender_user.display_name
+        except:
+            sender_name = "Joueur"
+
+        embed = discord.Embed(
+            title=f"{self.EMOJIS['check']} Échange Réussi !",
+            description=f"L'échange entre **{sender_name}** et **{interaction.user.display_name}** a été effectué !",
+            color=self.COLORS["success"]
+        )
+
+        # Résumé
+        summary = f"**{sender_name}** a donné:\n"
+        summary += f"• {trade['given_item'].rarity.emoji} {trade['given_item'].name} ×{trade['given_qty']}\n"
+        if trade["coins"] > 0:
+            summary += f"• {trade['coins']:,} {self.EMOJIS['coin']}\n"
+
+        summary += f"\n**{interaction.user.display_name}** a donné:\n"
+        if trade["requested_item"]:
+            summary += f"• {trade['requested_item'].rarity.emoji} {trade['requested_item'].name} ×{trade['requested_qty']}\n"
+        if trade["coins"] < 0:
+            summary += f"• {abs(trade['coins']):,} {self.EMOJIS['coin']}\n"
+        if not trade["requested_item"] and trade["coins"] >= 0:
+            summary += "• *Rien (cadeau reçu)*\n"
+
+        embed.add_field(name="📋 Résumé", value=summary, inline=False)
+
+        if self.GIFS["trade_success"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["trade_success"])
+
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    # ══════════════════════════════════════════════════════════════
+    # 🎁 COMMANDE CADEAU
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="cadeau", description="🎁 Offrir un objet à un joueur")
+    @app_commands.describe(
+        joueur="Joueur à qui offrir",
+        objet="Objet à offrir",
+        quantite="Quantité"
+    )
+    async def gift(self, interaction: discord.Interaction, joueur: discord.Member, objet: str, quantite: Optional[int] = 1):
+        """Offre un objet gratuitement."""
+        if joueur.id == interaction.user.id:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Erreur", "Tu ne peux pas t'offrir un cadeau !"),
+                ephemeral=True
+            )
+            return
+
+        player = self.data.get_player(interaction.user.id)
+        target = self.data.get_player(joueur.id)
+
+        # Vérifier l'objet
+        item = None
+        for item_id in player.inventory:
+            potential = self.data.get_item(item_id)
+            if potential and potential.name.lower() == objet.lower():
+                item = potential
+                break
+
+        if not item:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Introuvable", f"Tu n'as pas **{objet}**."),
+                ephemeral=True
+            )
+            return
+
+        if player.inventory.get(item.item_id, 0) < quantite:
+            await interaction.response.send_message(
+                embed=self._create_error_embed("❌ Insuffisant", f"Tu n'as que {player.inventory.get(item.item_id, 0)}× {item.name}."),
+                ephemeral=True
+            )
+            return
+
+        # Transférer
+        player.remove_item(item.item_id, quantite)
+        target.add_item(item.item_id, quantite)
+        self.data.save_player(player)
+        self.data.save_player(target)
+
+        embed = discord.Embed(
+            title="🎁 Cadeau Envoyé !",
+            description=(
+                f"**{interaction.user.display_name}** a offert à **{joueur.display_name}**:\n\n"
+                f"{item.rarity.emoji} **{item.name}** `×{quantite}`\n"
+                f"💰 Valeur: `{item.value * quantite:,}` pièces"
+            ),
+            color=self.COLORS["success"]
+        )
+
+        embed.set_thumbnail(url=joueur.display_avatar.url)
+
+        await interaction.response.send_message(embed=embed)
+
+    @gift.autocomplete('objet')
+    async def gift_autocomplete(self, interaction: discord.Interaction, current: str):
+        """Autocomplétion pour le cadeau."""
+        return await self.sell_autocomplete(interaction, current)
+
+    # ══════════════════════════════════════════════════════════════
+    # 🛠️ UTILITAIRES
+    # ══════════════════════════════════════════════════════════════
+
+    def _create_error_embed(self, title: str, description: str) -> discord.Embed:
+        """Crée un embed d'erreur stylisé."""
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=self.COLORS["error"]
+        )
+        if self.GIFS["error"] != "REMPLACE_PAR_TON_GIF":
+            embed.set_thumbnail(url=self.GIFS["error"])
+        return embed
+
+
+# ══════════════════════════════════════════════════════════════
+# 🔘 VIEW POUR LE TRADE
+# ══════════════════════════════════════════════════════════════
+
+class TradeView(discord.ui.View):
+    """Boutons pour accepter/refuser un trade."""
+
+    def __init__(self, cog: Economy, trade_id: int, receiver_id: int):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.trade_id = trade_id
+        self.receiver_id = receiver_id
+
+    @discord.ui.button(label="✅ Accepter", style=discord.ButtonStyle.green)
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.receiver_id:
+            await interaction.response.send_message("❌ Seul le destinataire peut accepter.", ephemeral=True)
+            return
+        await self.cog.execute_trade(self.trade_id, True, interaction)
+
+    @discord.ui.button(label="❌ Refuser", style=discord.ButtonStyle.red)
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.receiver_id:
+            await interaction.response.send_message("❌ Seul le destinataire peut refuser.", ephemeral=True)
+            return
+        await self.cog.execute_trade(self.trade_id, False, interaction)
 
 
 async def setup(bot: commands.Bot):
-    """Setup function pour charger le cog."""
+    """Setup function."""
     pass
