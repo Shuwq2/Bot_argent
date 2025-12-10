@@ -1,0 +1,44 @@
+{
+    "sets": [
+        {
+            "set_id": "set_dragon",
+            "name": "Armure du Dragon",
+            "pieces": ["dragon_helmet", "dragon_chestplate", "dragon_leggings", "dragon_boots"],
+            "bonus_2": {"drop_bonus": 0.02, "description": "+2% taux de drop"},
+            "bonus_4": {"drop_bonus": 0.08, "description": "+8% taux de drop"},
+            "description": "Forgée dans les flammes d'un dragon ancestral."
+        },
+        {
+            "set_id": "set_ombre",
+            "name": "Tenue de l'Ombre",
+            "pieces": ["shadow_helmet", "shadow_chestplate", "shadow_leggings", "shadow_boots"],
+            "bonus_2": {"drop_bonus": 0.015, "coin_bonus": 0.05, "description": "+1.5% drop, +5% pièces"},
+            "bonus_4": {"drop_bonus": 0.05, "coin_bonus": 0.15, "description": "+5% drop, +15% pièces"},
+            "description": "Une armure tissée dans les ténèbres les plus profondes."
+        },
+        {
+            "set_id": "set_royal",
+            "name": "Armure Royale",
+            "pieces": ["royal_helmet", "royal_chestplate", "royal_leggings", "royal_boots"],
+            "bonus_2": {"coin_bonus": 0.10, "description": "+10% pièces à la vente"},
+            "bonus_4": {"coin_bonus": 0.25, "description": "+25% pièces à la vente"},
+            "description": "L'équipement des anciens rois du royaume."
+        },
+        {
+            "set_id": "set_cristal",
+            "name": "Armure de Cristal",
+            "pieces": ["crystal_helmet", "crystal_chestplate", "crystal_leggings", "crystal_boots"],
+            "bonus_2": {"drop_bonus": 0.025, "description": "+2.5% taux de drop"},
+            "bonus_4": {"drop_bonus": 0.07, "description": "+7% taux de drop"},
+            "description": "Fabriquée à partir de cristaux magiques purs."
+        },
+        {
+            "set_id": "set_phoenix",
+            "name": "Armure du Phénix",
+            "pieces": ["phoenix_helmet", "phoenix_chestplate", "phoenix_leggings", "phoenix_boots"],
+            "bonus_2": {"drop_bonus": 0.03, "description": "+3% taux de drop"},
+            "bonus_4": {"drop_bonus": 0.10, "description": "+10% taux de drop"},
+            "description": "Imprégnée de l'essence immortelle du phénix."
+        }
+    ]
+}

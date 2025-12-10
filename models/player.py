@@ -3,7 +3,7 @@ Module définissant les joueurs et leur inventaire.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Dict
+from typing import Dict, Optional, List
 
 
 @dataclass
@@ -16,6 +16,21 @@ class Player:
     last_chest_date: str = ""
     total_chests_opened: int = 0
     total_items_sold: int = 0
+    
+    # Système de pets
+    pets: Dict[str, int] = field(default_factory=dict)  # pet_id -> quantité
+    equipped_pet: Optional[str] = None  # pet_id équipé
+    eggs_opened: int = 0  # Total d'oeufs ouverts
+    
+    # Système d'équipement
+    equipment: Dict[str, Optional[str]] = field(default_factory=lambda: {
+        "HELMET": None,
+        "CHESTPLATE": None,
+        "LEGGINGS": None,
+        "BOOTS": None,
+        "WEAPON": None,
+        "ACCESSORY": None
+    })
 
     # Constantes de jeu
     MAX_DAILY_CHESTS = 50
@@ -81,6 +96,49 @@ class Player:
             return True
         return False
 
+    def add_pet(self, pet_id: str, quantity: int = 1) -> None:
+        """Ajoute un pet à la collection."""
+        if pet_id in self.pets:
+            self.pets[pet_id] += quantity
+        else:
+            self.pets[pet_id] = quantity
+
+    def equip_pet(self, pet_id: str) -> bool:
+        """Équipe un pet. Retourne True si réussi."""
+        if pet_id in self.pets and self.pets[pet_id] > 0:
+            self.equipped_pet = pet_id
+            return True
+        return False
+
+    def unequip_pet(self) -> None:
+        """Déséquipe le pet actuel."""
+        self.equipped_pet = None
+
+    def equip_item(self, item_id: str, slot: str) -> Optional[str]:
+        """
+        Équipe un item dans le slot spécifié.
+        Retourne l'item_id précédemment équipé ou None.
+        """
+        if slot not in self.equipment:
+            return None
+        
+        old_item = self.equipment[slot]
+        self.equipment[slot] = item_id
+        return old_item
+
+    def unequip_item(self, slot: str) -> Optional[str]:
+        """Déséquipe l'item du slot. Retourne l'item_id déséquipé."""
+        if slot not in self.equipment:
+            return None
+        
+        old_item = self.equipment[slot]
+        self.equipment[slot] = None
+        return old_item
+
+    def get_equipped_items(self) -> List[str]:
+        """Retourne la liste des item_ids équipés."""
+        return [item_id for item_id in self.equipment.values() if item_id]
+
     def _reset_daily_if_needed(self) -> None:
         """Réinitialise le compteur journalier si nécessaire."""
         today = date.today().isoformat()
@@ -97,12 +155,24 @@ class Player:
             "daily_chests_opened": self.daily_chests_opened,
             "last_chest_date": self.last_chest_date,
             "total_chests_opened": self.total_chests_opened,
-            "total_items_sold": self.total_items_sold
+            "total_items_sold": self.total_items_sold,
+            "pets": self.pets,
+            "equipped_pet": self.equipped_pet,
+            "eggs_opened": self.eggs_opened,
+            "equipment": self.equipment
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Player":
         """Crée un Player à partir d'un dictionnaire."""
+        default_equipment = {
+            "HELMET": None,
+            "CHESTPLATE": None,
+            "LEGGINGS": None,
+            "BOOTS": None,
+            "WEAPON": None,
+            "ACCESSORY": None
+        }
         return cls(
             user_id=data["user_id"],
             coins=data.get("coins", 0),
@@ -110,5 +180,9 @@ class Player:
             daily_chests_opened=data.get("daily_chests_opened", 0),
             last_chest_date=data.get("last_chest_date", ""),
             total_chests_opened=data.get("total_chests_opened", 0),
-            total_items_sold=data.get("total_items_sold", 0)
+            total_items_sold=data.get("total_items_sold", 0),
+            pets=data.get("pets", {}),
+            equipped_pet=data.get("equipped_pet"),
+            eggs_opened=data.get("eggs_opened", 0),
+            equipment=data.get("equipment", default_equipment)
         )

@@ -1,0 +1,92 @@
+{
+    "pets": [
+        {
+            "pet_id": "pet_001",
+            "name": "Petit Slime",
+            "rarity": "NORMAL",
+            "description": "Un adorable slime qui rebondit partout !",
+            "drop_bonus": 0.005,
+            "emoji": "🟢"
+        },
+        {
+            "pet_id": "pet_002",
+            "name": "Hibou Sage",
+            "rarity": "NORMAL",
+            "description": "Un hibou mystérieux aux yeux brillants.",
+            "drop_bonus": 0.008,
+            "emoji": "🦉"
+        },
+        {
+            "pet_id": "pet_003",
+            "name": "Chat Chanceux",
+            "rarity": "RARE",
+            "description": "Un chat noir qui porte chance malgré les superstitions.",
+            "drop_bonus": 0.015,
+            "emoji": "🐱"
+        },
+        {
+            "pet_id": "pet_004",
+            "name": "Renard Rusé",
+            "rarity": "RARE",
+            "description": "Un renard malin qui trouve toujours les trésors cachés.",
+            "drop_bonus": 0.02,
+            "emoji": "🦊"
+        },
+        {
+            "pet_id": "pet_005",
+            "name": "Fée Scintillante",
+            "rarity": "EPIC",
+            "description": "Une petite fée qui saupoudre de la poussière magique.",
+            "drop_bonus": 0.03,
+            "emoji": "🧚"
+        },
+        {
+            "pet_id": "pet_006",
+            "name": "Phénix Miniature",
+            "rarity": "EPIC",
+            "description": "Un petit phénix aux plumes flamboyantes.",
+            "drop_bonus": 0.035,
+            "emoji": "🔥"
+        },
+        {
+            "pet_id": "pet_007",
+            "name": "Dragon de Poche",
+            "rarity": "LEGENDARY",
+            "description": "Un dragon miniature qui crache des étincelles.",
+            "drop_bonus": 0.05,
+            "emoji": "🐉"
+        },
+        {
+            "pet_id": "pet_008",
+            "name": "Licorne Céleste",
+            "rarity": "LEGENDARY",
+            "description": "Une licorne majestueuse aux pouvoirs mystiques.",
+            "drop_bonus": 0.055,
+            "emoji": "🦄"
+        },
+        {
+            "pet_id": "pet_009",
+            "name": "Esprit Ancien",
+            "rarity": "MYTHIC",
+            "description": "Un esprit ancestral qui murmure les secrets du destin.",
+            "drop_bonus": 0.08,
+            "emoji": "👻"
+        },
+        {
+            "pet_id": "pet_010",
+            "name": "Gardien Cosmique",
+            "rarity": "MYTHIC",
+            "description": "Une entité venue des étoiles, protecteur ultime.",
+            "drop_bonus": 0.10,
+            "emoji": "✨"
+        }
+    ],
+    "egg_cost": 10000,
+    "egg_drop_rates": {
+        "NORMAL": 0.45,
+        "RARE": 0.30,
+        "EPIC": 0.15,
+        "LEGENDARY": 0.08,
+        "MYTHIC": 0.0002
+    }
+}

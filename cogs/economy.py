@@ -154,7 +154,9 @@ class Economy(commands.Cog):
             await interaction.edit_original_response(embed=self._create_error_embed("Erreur", "Impossible d'ouvrir le coffre."))
             return
 
-        item = self.chest.open()
+        # Calcul du bonus de drop (pet + sets)
+        drop_bonus = self.data.calculate_total_drop_bonus(player)
+        item = self.chest.open(drop_bonus)
         if not item:
             await interaction.edit_original_response(embed=self._create_error_embed("Erreur", "Aucun objet disponible."))
             return
@@ -371,6 +373,9 @@ class Economy(commands.Cog):
         items_obtained = []
         rarity_counts = {r: 0 for r in Rarity}
         total_value = 0
+        
+        # Calcul du bonus de drop (pet + sets)
+        drop_bonus = self.data.calculate_total_drop_bonus(player)
 
         for i in range(chests_to_open):
             # Déterminer si gratuit ou payant
@@ -380,7 +385,7 @@ class Economy(commands.Cog):
                 success = player.open_chest(paid=True)
             
             if success:
-                item = self.chest.open()
+                item = self.chest.open(drop_bonus)
                 if item:
                     player.add_item(item.item_id)
                     items_obtained.append(item)
@@ -1388,6 +1393,466 @@ class Economy(commands.Cog):
         if self.GIFS["error"] != "REMPLACE_PAR_TON_GIF":
             embed.set_thumbnail(url=self.GIFS["error"])
         return embed
+
+    # ══════════════════════════════════════════════════════════════
+    # 🥚 SYSTÈME DE PETS - OEUFS
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="oeuf", description="🥚 Ouvre un œuf mystérieux pour obtenir un pet !")
+    async def open_egg(self, interaction: discord.Interaction):
+        """Ouvre un œuf pour obtenir un pet aléatoire."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        egg_cost = self.data.get_egg_cost()
+        
+        if player.coins < egg_cost:
+            embed = self._create_error_embed(
+                "🥚 Pas assez de pièces !",
+                f"Tu as besoin de **{egg_cost:,}** 💰 pour ouvrir un œuf.\n"
+                f"Tu as seulement **{player.coins:,}** 💰"
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        # Animation d'ouverture
+        opening_embed = discord.Embed(
+            title="🥚 Ouverture de l'œuf...",
+            description="✨ L'œuf commence à se fissurer...",
+            color=0xf39c12
+        )
+        message = await interaction.followup.send(embed=opening_embed)
+        await asyncio.sleep(1.5)
+        
+        # Déduction des pièces et drop du pet
+        player.coins -= egg_cost
+        player.eggs_opened += 1
+        
+        # Sélection du pet
+        import random
+        egg_rates = self.data.get_egg_drop_rates()
+        all_pets = self.data.get_all_pets()
+        
+        # Déterminer la rareté
+        rand = random.random()
+        cumulative = 0.0
+        selected_rarity = "NORMAL"
+        for rarity, rate in egg_rates.items():
+            cumulative += rate
+            if rand < cumulative:
+                selected_rarity = rarity
+                break
+        
+        # Filtrer les pets de cette rareté
+        pets_of_rarity = [p for p in all_pets if p.rarity.name == selected_rarity]
+        if pets_of_rarity:
+            pet = random.choice(pets_of_rarity)
+        else:
+            pet = random.choice(all_pets)
+        
+        # Ajouter le pet au joueur
+        player.add_pet(pet.pet_id)
+        self.data.save_player(player)
+        
+        # Embed de révélation
+        reveal_embed = discord.Embed(
+            title="🐣 Un nouveau compagnon !",
+            description=f"Tu as obtenu **{pet.emoji} {pet.name}** !",
+            color=self.COLORS.get(pet.rarity, 0x3498db)
+        )
+        reveal_embed.add_field(
+            name="📖 Description",
+            value=pet.description,
+            inline=False
+        )
+        reveal_embed.add_field(
+            name="⭐ Rareté",
+            value=f"{pet.rarity.emoji} {pet.rarity.display_name}",
+            inline=True
+        )
+        reveal_embed.add_field(
+            name="📈 Bonus de drop",
+            value=f"+{pet.drop_bonus * 100:.1f}%",
+            inline=True
+        )
+        reveal_embed.set_footer(text=f"💰 {player.coins:,} pièces restantes | Œufs ouverts: {player.eggs_opened}")
+        
+        await message.edit(embed=reveal_embed)
+
+    @app_commands.command(name="pets", description="🐾 Affiche ta collection de pets")
+    async def show_pets(self, interaction: discord.Interaction):
+        """Affiche les pets du joueur."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        
+        if not player.pets:
+            embed = discord.Embed(
+                title="🐾 Collection de Pets",
+                description="Tu n'as aucun pet !\n\n"
+                            f"Utilise `/oeuf` pour en obtenir un ({self.data.get_egg_cost():,} 💰)",
+                color=0x95a5a6
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        embed = discord.Embed(
+            title=f"🐾 Tes Compagnons ({len(player.pets)} pets)",
+            color=0x9b59b6
+        )
+        
+        pets_text = ""
+        for pet_id, quantity in player.pets.items():
+            pet = self.data.get_pet(pet_id)
+            if pet:
+                equipped = " 🔹 **ÉQUIPÉ**" if player.equipped_pet == pet_id else ""
+                pets_text += f"{pet.emoji} **{pet.name}** x{quantity}\n"
+                pets_text += f"   {pet.rarity.emoji} {pet.rarity.display_name} • +{pet.drop_bonus * 100:.1f}% drop{equipped}\n\n"
+        
+        embed.description = pets_text
+        
+        # Bonus actuel
+        if player.equipped_pet:
+            current_pet = self.data.get_pet(player.equipped_pet)
+            if current_pet:
+                embed.add_field(
+                    name="📈 Bonus actif",
+                    value=f"{current_pet.emoji} {current_pet.name}: **+{current_pet.drop_bonus * 100:.1f}%** taux de drop",
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="⚠️ Aucun pet équipé",
+                value="Utilise `/equiper-pet <nom>` pour équiper un pet !",
+                inline=False
+            )
+        
+        embed.set_footer(text=f"💰 {player.coins:,} pièces | 🥚 {player.eggs_opened} œufs ouverts")
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="equiper-pet", description="🐾 Équipe un pet pour obtenir son bonus")
+    @app_commands.describe(nom="Le nom du pet à équiper")
+    async def equip_pet(self, interaction: discord.Interaction, nom: str):
+        """Équipe un pet."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        
+        # Chercher le pet par nom
+        all_pets = self.data.get_all_pets()
+        target_pet = None
+        for pet in all_pets:
+            if pet.name.lower() == nom.lower():
+                target_pet = pet
+                break
+        
+        if not target_pet:
+            # Recherche partielle
+            for pet in all_pets:
+                if nom.lower() in pet.name.lower():
+                    target_pet = pet
+                    break
+        
+        if not target_pet:
+            embed = self._create_error_embed(
+                "❌ Pet introuvable",
+                f"Aucun pet avec le nom **{nom}** n'existe."
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        if target_pet.pet_id not in player.pets:
+            embed = self._create_error_embed(
+                "❌ Pet non possédé",
+                f"Tu ne possèdes pas **{target_pet.emoji} {target_pet.name}**."
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        # Équiper le pet
+        player.equip_pet(target_pet.pet_id)
+        self.data.save_player(player)
+        
+        embed = discord.Embed(
+            title="🐾 Pet équipé !",
+            description=f"{target_pet.emoji} **{target_pet.name}** t'accompagne maintenant !",
+            color=self.COLORS.get(target_pet.rarity, 0x2ecc71)
+        )
+        embed.add_field(
+            name="📈 Bonus actif",
+            value=f"+**{target_pet.drop_bonus * 100:.1f}%** taux de drop sur tous les coffres",
+            inline=False
+        )
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="desequiper-pet", description="🐾 Retire le pet actuellement équipé")
+    async def unequip_pet(self, interaction: discord.Interaction):
+        """Déséquipe le pet actuel."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        
+        if not player.equipped_pet:
+            embed = self._create_error_embed(
+                "❌ Aucun pet équipé",
+                "Tu n'as pas de pet équipé actuellement."
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        old_pet = self.data.get_pet(player.equipped_pet)
+        player.unequip_pet()
+        self.data.save_player(player)
+        
+        embed = discord.Embed(
+            title="🐾 Pet déséquipé",
+            description=f"{old_pet.emoji if old_pet else ''} **{old_pet.name if old_pet else 'Ton pet'}** retourne se reposer.",
+            color=0x95a5a6
+        )
+        await interaction.followup.send(embed=embed)
+
+    # ══════════════════════════════════════════════════════════════
+    # 🛡️ SYSTÈME D'ÉQUIPEMENT
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="equipement", description="🛡️ Affiche ton équipement et tes bonus de set")
+    async def show_equipment(self, interaction: discord.Interaction):
+        """Affiche l'équipement actuel du joueur."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        
+        embed = discord.Embed(
+            title="🛡️ Ton Équipement",
+            color=0xe67e22
+        )
+        
+        # Slots d'équipement
+        slot_emojis = {
+            "HELMET": "🪖",
+            "CHESTPLATE": "🛡️",
+            "LEGGINGS": "👖",
+            "BOOTS": "👢",
+            "WEAPON": "⚔️",
+            "ACCESSORY": "💍"
+        }
+        
+        equipment_text = ""
+        for slot, item_id in player.equipment.items():
+            emoji = slot_emojis.get(slot, "📦")
+            slot_name = {
+                "HELMET": "Casque",
+                "CHESTPLATE": "Plastron",
+                "LEGGINGS": "Jambières",
+                "BOOTS": "Bottes",
+                "WEAPON": "Arme",
+                "ACCESSORY": "Accessoire"
+            }.get(slot, slot)
+            
+            if item_id:
+                item = self.data.get_item(item_id)
+                if item:
+                    set_info = f" [{self.data.get_set(item.set_id).name}]" if item.set_id else ""
+                    equipment_text += f"{emoji} **{slot_name}**: {item.rarity.emoji} {item.name}{set_info}\n"
+                else:
+                    equipment_text += f"{emoji} **{slot_name}**: ❓ Item inconnu\n"
+            else:
+                equipment_text += f"{emoji} **{slot_name}**: *Vide*\n"
+        
+        embed.add_field(name="📋 Slots", value=equipment_text, inline=False)
+        
+        # Bonus de sets
+        set_bonuses = self.data.get_set_bonuses(player)
+        if set_bonuses:
+            bonus_text = ""
+            for set_id, info in set_bonuses.items():
+                bonus_text += f"**{info['set_name']}** ({info['pieces']}/4 pièces)\n"
+                bonus_text += f"   ➤ {info['bonus'].get('description', 'Bonus actif')}\n"
+            embed.add_field(name="✨ Bonus de Set Actifs", value=bonus_text, inline=False)
+        
+        # Bonus totaux
+        total_drop = self.data.calculate_total_drop_bonus(player)
+        total_coin = self.data.calculate_total_coin_bonus(player)
+        
+        if total_drop > 0 or total_coin > 0:
+            bonus_total = ""
+            if total_drop > 0:
+                bonus_total += f"📈 Drop: **+{total_drop * 100:.1f}%**\n"
+            if total_coin > 0:
+                bonus_total += f"💰 Vente: **+{total_coin * 100:.0f}%**\n"
+            embed.add_field(name="🎯 Bonus Totaux", value=bonus_total, inline=False)
+        
+        embed.set_footer(text="Utilise /equiper <nom_item> pour équiper un objet")
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="equiper", description="🛡️ Équipe un objet de ton inventaire")
+    @app_commands.describe(nom="Le nom de l'objet à équiper")
+    async def equip_item(self, interaction: discord.Interaction, nom: str):
+        """Équipe un objet."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        
+        # Chercher l'item dans l'inventaire
+        target_item = None
+        for item_id in player.inventory:
+            item = self.data.get_item(item_id)
+            if item and item.name.lower() == nom.lower():
+                target_item = item
+                break
+        
+        if not target_item:
+            # Recherche partielle
+            for item_id in player.inventory:
+                item = self.data.get_item(item_id)
+                if item and nom.lower() in item.name.lower():
+                    target_item = item
+                    break
+        
+        if not target_item:
+            embed = self._create_error_embed(
+                "❌ Objet introuvable",
+                f"Tu ne possèdes pas d'objet nommé **{nom}**."
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        if not target_item.is_equipable():
+            embed = self._create_error_embed(
+                "❌ Non équipable",
+                f"**{target_item.name}** ne peut pas être équipé.\n"
+                "Seuls les casques, plastrons, jambières, bottes, armes et accessoires sont équipables."
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        # Équiper l'item
+        slot = target_item.item_type
+        old_item_id = player.equip_item(target_item.item_id, slot)
+        self.data.save_player(player)
+        
+        embed = discord.Embed(
+            title="🛡️ Équipement modifié !",
+            color=self.COLORS.get(target_item.rarity, 0x2ecc71)
+        )
+        
+        slot_name = {
+            "HELMET": "Casque",
+            "CHESTPLATE": "Plastron",
+            "LEGGINGS": "Jambières",
+            "BOOTS": "Bottes",
+            "WEAPON": "Arme",
+            "ACCESSORY": "Accessoire"
+        }.get(slot, slot)
+        
+        if old_item_id:
+            old_item = self.data.get_item(old_item_id)
+            old_name = old_item.name if old_item else old_item_id
+            embed.description = f"**{slot_name}**: {old_name} ➤ {target_item.rarity.emoji} **{target_item.name}**"
+        else:
+            embed.description = f"**{slot_name}**: {target_item.rarity.emoji} **{target_item.name}** équipé !"
+        
+        # Afficher le bonus de set si applicable
+        if target_item.set_id:
+            equipment_set = self.data.get_set(target_item.set_id)
+            if equipment_set:
+                set_pieces = self.data.get_equipped_set_pieces(player)
+                count = set_pieces.get(target_item.set_id, 0)
+                embed.add_field(
+                    name=f"📦 {equipment_set.name}",
+                    value=f"{count}/4 pièces équipées",
+                    inline=False
+                )
+        
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="desequiper", description="🛡️ Retire un équipement")
+    @app_commands.describe(slot="Le slot à vider (casque, plastron, jambieres, bottes, arme, accessoire)")
+    @app_commands.choices(slot=[
+        app_commands.Choice(name="Casque", value="HELMET"),
+        app_commands.Choice(name="Plastron", value="CHESTPLATE"),
+        app_commands.Choice(name="Jambières", value="LEGGINGS"),
+        app_commands.Choice(name="Bottes", value="BOOTS"),
+        app_commands.Choice(name="Arme", value="WEAPON"),
+        app_commands.Choice(name="Accessoire", value="ACCESSORY"),
+    ])
+    async def unequip_item(self, interaction: discord.Interaction, slot: str):
+        """Déséquipe un objet."""
+        await interaction.response.defer()
+        
+        player = self.data.get_player(interaction.user.id)
+        
+        old_item_id = player.unequip_item(slot)
+        
+        if not old_item_id:
+            slot_name = {
+                "HELMET": "Casque",
+                "CHESTPLATE": "Plastron",
+                "LEGGINGS": "Jambières",
+                "BOOTS": "Bottes",
+                "WEAPON": "Arme",
+                "ACCESSORY": "Accessoire"
+            }.get(slot, slot)
+            embed = self._create_error_embed(
+                "❌ Slot vide",
+                f"Tu n'as rien d'équipé dans le slot **{slot_name}**."
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        self.data.save_player(player)
+        
+        old_item = self.data.get_item(old_item_id)
+        old_name = old_item.name if old_item else old_item_id
+        
+        embed = discord.Embed(
+            title="🛡️ Équipement retiré",
+            description=f"**{old_name}** a été déséquipé.",
+            color=0x95a5a6
+        )
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="sets", description="📦 Affiche tous les sets d'équipement disponibles")
+    async def show_sets(self, interaction: discord.Interaction):
+        """Affiche la liste des sets et leurs bonus."""
+        await interaction.response.defer()
+        
+        all_sets = self.data.get_all_sets()
+        
+        if not all_sets:
+            embed = discord.Embed(
+                title="📦 Sets d'Équipement",
+                description="Aucun set disponible pour le moment.",
+                color=0x95a5a6
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        embed = discord.Embed(
+            title="📦 Sets d'Équipement Disponibles",
+            description="Collecte les pièces d'un set pour obtenir des bonus !",
+            color=0xe67e22
+        )
+        
+        for eq_set in all_sets:
+            set_text = f"*{eq_set.description}*\n\n"
+            set_text += f"**2 pièces**: {eq_set.bonus_2.get('description', 'Bonus')}\n"
+            set_text += f"**4 pièces**: {eq_set.bonus_4.get('description', 'Bonus complet')}\n\n"
+            set_text += f"Pièces: "
+            
+            # Lister les pièces du set
+            pieces_names = []
+            for piece_id in eq_set.pieces:
+                item = self.data.get_item(piece_id)
+                if item:
+                    pieces_names.append(item.name)
+                else:
+                    pieces_names.append(piece_id)
+            set_text += ", ".join(pieces_names)
+            
+            embed.add_field(name=f"✨ {eq_set.name}", value=set_text, inline=False)
+        
+        await interaction.followup.send(embed=embed)
 
 
 # ══════════════════════════════════════════════════════════════
