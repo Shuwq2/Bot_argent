@@ -109,6 +109,7 @@ class Emojis:
     XP = "✨"
     LVL = "📊"
     STATS = "📊"
+    LEVEL_UP = "🎊"
     
     # Pets
     EGG = "🥚"
