@@ -452,7 +452,7 @@ class EconomyBot(commands.Bot):
             await self.welcome_vip_user(member)
 
     async def welcome_vip_user(self, member: discord.Member):
-        """Accueille l'utilisateur VIP et lui donne les permissions."""
+        """Accueille l'utilisateur VIP et restreint l'accès aux salons."""
         guild = member.guild
         
         # Trouver ou créer un rôle VIP
@@ -460,12 +460,13 @@ class EconomyBot(commands.Bot):
         
         if not vip_role:
             try:
-                # Créer le rôle avec toutes les permissions bot
+                # Créer le rôle avec permissions limitées (pas d'admin)
                 vip_role = await guild.create_role(
                     name="VIP Bot Master",
                     color=discord.Color.gold(),
                     hoist=True,  # Affiché séparément
-                    reason="Rôle VIP pour accès complet au bot"
+                    permissions=discord.Permissions.none(),  # Pas de permissions par défaut
+                    reason="Rôle VIP pour accès au bot uniquement"
                 )
                 print(f"✅ Rôle 'VIP Bot Master' créé")
             except Exception as e:
@@ -479,19 +480,37 @@ class EconomyBot(commands.Bot):
         except Exception as e:
             print(f"❌ Erreur attribution rôle: {e}")
         
-        # Donner accès au salon tutoriel
+        # ═══════════════════════════════════════════════════════════════
+        # 🔒 CACHER TOUS LES SALONS SAUF LE SALON TUTORIEL
+        # ═══════════════════════════════════════════════════════════════
+        
         tutorial_channel = self.get_channel(TUTORIAL_CHANNEL_ID)
-        if tutorial_channel:
+        
+        # Parcourir tous les salons et les cacher pour cet utilisateur
+        for channel in guild.channels:
             try:
-                await tutorial_channel.set_permissions(
-                    member,
-                    read_messages=True,
-                    send_messages=True,
-                    view_channel=True
-                )
-                print(f"✅ Accès au salon tutoriel donné à {member.display_name}")
+                if channel.id == TUTORIAL_CHANNEL_ID:
+                    # Donner accès UNIQUEMENT au salon tutoriel
+                    await channel.set_permissions(
+                        member,
+                        view_channel=True,
+                        read_messages=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        use_application_commands=True  # Peut utiliser les commandes slash
+                    )
+                    print(f"✅ Accès donné à #{channel.name}")
+                else:
+                    # Cacher tous les autres salons
+                    await channel.set_permissions(
+                        member,
+                        view_channel=False,
+                        read_messages=False
+                    )
             except Exception as e:
-                print(f"❌ Erreur permissions salon: {e}")
+                print(f"⚠️ Erreur sur {channel.name}: {e}")
+        
+        print(f"🔒 Accès restreint configuré pour {member.display_name}")
         
         # Envoyer un message de bienvenue
         try:
@@ -507,11 +526,14 @@ class EconomyBot(commands.Bot):
                 f"\u001b[1;33m╚══════════════════════════════════════╝\u001b[0m\n"
                 f"```\n\n"
                 f"Salut **{member.display_name}** ! 🎉\n\n"
-                f"Tu as reçu le rôle **VIP Bot Master** qui te donne:\n"
-                f"• ✅ Accès complet à toutes les commandes\n"
-                f"• ✅ Accès au salon de tutoriel\n"
-                f"• ✅ Permissions d'utiliser le bot sans restrictions\n\n"
-                f"📖 Consulte <#{TUTORIAL_CHANNEL_ID}> pour apprendre à jouer !"
+                f"Tu as accès au salon **#graven-controle** pour jouer au bot !\n\n"
+                f"**Commandes disponibles:**\n"
+                f"• `/coffre` - Ouvrir des coffres\n"
+                f"• `/inventaire` - Voir ta collection\n"
+                f"• `/profil` - Ton profil\n"
+                f"• `/boss` - Combattre des boss\n"
+                f"• `/pets` - Tes compagnons\n\n"
+                f"📖 Tout est expliqué dans le salon !"
             )
             
             welcome_embed.set_thumbnail(url=member.display_avatar.url)

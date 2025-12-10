@@ -230,7 +230,7 @@ class Battle(commands.Cog):
         embed.title = f"{Emojis.STATS} Profil de Combat"
         
         # Niveau avec style
-        level_display = create_level_display(player.level)
+        level_display = create_level_display(player.level, current_xp, required_xp)
         xp_bar = create_xp_bar(current_xp, required_xp, 16)
         
         embed.description = (
@@ -294,6 +294,9 @@ class Battle(commands.Cog):
         player = self.data.get_player(interaction.user.id)
         bosses = self.data.get_all_bosses()
         
+        # Récupérer l'XP pour l'affichage du niveau
+        current_xp, xp_required, _ = player.get_xp_progress()
+        
         embed = discord.Embed(
             title=f"👹 Arène des Boss",
             description=(
@@ -302,18 +305,26 @@ class Battle(commands.Cog):
                 f"\u001b[1;31m║\u001b[0m    ⚔️ CHOISISSEZ VOTRE ADVERSAIRE ⚔️   \u001b[1;31m║\u001b[0m\n"
                 f"\u001b[1;31m╚{'═' * 36}╝\u001b[0m\n"
                 f"```\n"
-                f"Ton niveau: **{player.level}** {create_level_display(player.level)}"
+                f"Ton niveau: **{player.level}** {create_level_display(player.level, current_xp, xp_required)}"
             ),
             color=Colors.DANGER
         )
         
         for boss in bosses[:9]:  # Max 9 pour éviter le dépassement
             unlocked = player.level >= boss.level_required
-            lock_emoji = "🔓" if unlocked else "🔒"
             kills = player.bosses_kills.get(boss.boss_id, 0)
+            defeated = kills > 0  # Boss déjà battu
             
-            # Indicateur de difficulté visuel
-            diff_bar = "🔴" * min(boss.difficulty.value, 5)
+            # Emoji de statut
+            if defeated:
+                lock_emoji = "✅"  # Boss vaincu
+            elif unlocked:
+                lock_emoji = "🔓"  # Débloqué mais pas vaincu
+            else:
+                lock_emoji = "�"  # Verrouillé
+            
+            # Nom du boss barré si déjà battu
+            boss_name = f"~~{boss.name}~~" if defeated else boss.name
             
             if unlocked:
                 boss_info = (
@@ -332,7 +343,7 @@ class Battle(commands.Cog):
                 )
             
             embed.add_field(
-                name=f"{lock_emoji} {boss.emoji} {boss.name}",
+                name=f"{lock_emoji} {boss.emoji} {boss_name}",
                 value=boss_info,
                 inline=True
             )
@@ -352,11 +363,14 @@ class Battle(commands.Cog):
     @app_commands.autocomplete(boss=boss_autocomplete)
     async def start_combat(self, interaction: discord.Interaction, boss: str):
         """Lance un combat avec interface moderne."""
+        # Defer immédiatement pour éviter les timeout
+        await interaction.response.defer()
+        
         player = self.data.get_player(interaction.user.id)
         
         # Vérifications
         if interaction.user.id in self.active_combats:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=self._error_embed("Combat en cours", "Tu es déjà en combat ! Termine-le d'abord."),
                 ephemeral=True
             )
@@ -364,14 +378,14 @@ class Battle(commands.Cog):
         
         target_boss = self.data.get_boss_by_name(boss)
         if not target_boss:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=self._error_embed("Boss introuvable", f"Aucun boss nommé **{boss}**.\nUtilise `/boss` pour voir la liste."),
                 ephemeral=True
             )
             return
         
         if player.level < target_boss.level_required:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=self._error_embed(
                     "Niveau insuffisant",
                     f"Tu dois être **niveau {target_boss.level_required}** pour affronter {target_boss.emoji} **{target_boss.name}**.\n"
@@ -385,9 +399,10 @@ class Battle(commands.Cog):
             player.heal_full()
             self.data.save_player(player)
         
-        await interaction.response.defer()
+        # Mettre à jour les stats d'équipement avant le combat
+        player.update_equipment_stats(self.data)
         
-        # Initialisation du combat
+        # Initialisation du combat avec stats d'équipement
         target_boss.reset_hp()
         combat = CombatState(
             player_id=interaction.user.id,
@@ -662,8 +677,23 @@ class Battle(commands.Cog):
     
     async def _process_victory(self, combat: CombatState, player, boss: Boss, user: discord.User) -> discord.Embed:
         """Traite la victoire avec design moderne."""
-        xp_gained = boss.xp_reward
-        coins_gained = boss.coins_reward
+        # Mettre à jour les stats d'équipement
+        player.update_equipment_stats(self.data)
+        
+        # Calculer les récompenses avec bonus d'équipement
+        base_xp = boss.xp_reward
+        base_coins = boss.coins_reward
+        
+        xp_bonus = player.get_xp_bonus()
+        coin_bonus = player.get_coin_bonus()
+        
+        xp_gained = int(base_xp * (1 + xp_bonus))
+        coins_gained = int(base_coins * (1 + coin_bonus))
+        
+        # Texte bonus si applicable
+        bonus_text = ""
+        if xp_bonus > 0 or coin_bonus > 0:
+            bonus_text = f"\n*Bonus équipement: +{int(xp_bonus*100)}% XP, +{int(coin_bonus*100)}% 💰*"
         
         levels_gained = player.add_xp(xp_gained)
         player.add_coins(coins_gained)
@@ -696,7 +726,7 @@ class Battle(commands.Cog):
             f"\u001b[1;32m║\u001b[0m       🏆 BOSS ÉLIMINÉ ! 🏆          \u001b[1;32m║\u001b[0m\n"
             f"\u001b[1;32m╚{'═' * 36}╝\u001b[0m\n"
             f"```\n"
-            f"Tu as vaincu {boss.emoji} **{boss.name}** !"
+            f"Tu as vaincu {boss.emoji} **{boss.name}** !{bonus_text}"
         )
         
         # Récompenses

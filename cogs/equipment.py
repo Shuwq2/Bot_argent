@@ -292,16 +292,35 @@ class Equipment(commands.Cog):
         total_drop = self.data.calculate_total_drop_bonus(player)
         total_coin = self.data.calculate_total_coin_bonus(player)
         
-        if total_drop > 0 or total_coin > 0:
-            stats_text = "```\n"
-            if total_drop > 0:
-                drop_bar = "█" * min(10, int(total_drop * 20)) + "░" * (10 - min(10, int(total_drop * 20)))
-                stats_text += f"📈 DROP   [{drop_bar}] +{total_drop * 100:.1f}%\n"
-            if total_coin > 0:
-                coin_bar = "█" * min(10, int(total_coin * 10)) + "░" * (10 - min(10, int(total_coin * 10)))
-                stats_text += f"💰 VENTE  [{coin_bar}] +{total_coin * 100:.0f}%\n"
-            stats_text += "```"
-            embed.add_field(name="📊 Statistiques Bonus", value=stats_text, inline=False)
+        # Mettre à jour les stats d'équipement
+        player.update_equipment_stats(self.data)
+        
+        # Stats de combat améliorées
+        stats_text = "```\n"
+        stats_text += f"❤️ PV     +{player.get_max_hp() - player.base_hp:>3}  ({player.get_max_hp()} total)\n"
+        stats_text += f"⚔️ ATK    +{player.get_attack() - player.base_attack:>3}  ({player.get_attack()} total)\n"
+        stats_text += f"🛡️ DEF    +{player.get_defense() - player.base_defense:>3}  ({player.get_defense()} total)\n"
+        stats_text += f"💨 VIT    +{player.get_speed() - player.base_speed:>3}  ({player.get_speed()} total)\n"
+        stats_text += "```"
+        embed.add_field(name="⚔️ Stats de Combat", value=stats_text, inline=True)
+        
+        # Bonus économiques
+        bonus_text = "```\n"
+        if total_drop > 0:
+            bonus_text += f"📈 DROP   +{total_drop * 100:.1f}%\n"
+        else:
+            bonus_text += f"📈 DROP   +0%\n"
+        if total_coin > 0:
+            bonus_text += f"💰 OR     +{total_coin * 100:.0f}%\n"
+        else:
+            bonus_text += f"💰 OR     +0%\n"
+        xp_bonus = player.get_xp_bonus()
+        if xp_bonus > 0:
+            bonus_text += f"✨ XP     +{xp_bonus * 100:.0f}%\n"
+        else:
+            bonus_text += f"✨ XP     +0%\n"
+        bonus_text += "```"
+        embed.add_field(name="📊 Bonus Économiques", value=bonus_text, inline=True)
         
         embed.set_footer(text="💡 /equiper <item> • /desequiper-rapide • /sets")
         

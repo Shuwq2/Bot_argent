@@ -9,7 +9,6 @@ from datetime import datetime
 import asyncio
 
 from services import DataManager
-from utils import GIFS, COLORS, EMOJIS
 from utils.styles import Colors, Emojis, format_number, create_rarity_indicator
 
 

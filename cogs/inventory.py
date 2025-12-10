@@ -1,3 +1,10 @@
+RARITY_IMAGES = {
+    "normal": "https://imgur.com/OX8kBYX",      # Vert
+    "rare": "https://imgur.com/5IGZUZk.png",        # Bleu
+    "epic": "https://imgur.com/lgNP9Cg.png",        # Violet
+    "legendary": "https://imgur.com/V3Nw9TL.png",   # Or
+    "mythic": "https://imgur.com/EZuex8X.png",      # Rouge
+}
 """
 Cog gérant l'inventaire et les ventes avec design ultra-moderne.
 """
@@ -8,7 +15,7 @@ from typing import Optional, List
 
 from models import Rarity
 from services import DataManager
-from utils import GIFS, COLORS, EMOJIS
+from utils import COLORS
 from utils.styles import (
     Colors, Emojis,
     create_progress_bar, create_stat_bar,
@@ -394,7 +401,159 @@ class Inventory(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     # ───────────────────────────────────────────────────────────────
-    # 🏪 COMMANDE BOUTIQUE MODERNE
+    # � COMMANDE MANGER/SOIGNER
+    # ───────────────────────────────────────────────────────────────
+
+    async def food_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete pour la nourriture et potions uniquement."""
+        player = self.data.get_player(interaction.user.id)
+        choices = []
+        
+        for item_id, qty in player.inventory.items():
+            item = self.data.get_item(item_id)
+            if item and item.category in ["Nourriture", "Potions"]:
+                if current.lower() in item.name.lower() or not current:
+                    display = f"{item.rarity.emoji} {item.name} (×{qty})"
+                    choices.append(app_commands.Choice(name=display[:100], value=item.name))
+        
+        return choices[:25]
+
+    @app_commands.command(name="manger", description="🍖 Consomme de la nourriture ou une potion pour te soigner")
+    @app_commands.describe(item="Nourriture ou potion à consommer")
+    @app_commands.autocomplete(item=food_autocomplete)
+    async def manger(self, interaction: discord.Interaction, item: str):
+        """Consomme un item pour restaurer des PV."""
+        player = self.data.get_player(interaction.user.id)
+        
+        # Trouver l'item par nom
+        target_item = None
+        target_item_id = None
+        for item_id, qty in player.inventory.items():
+            found_item = self.data.get_item(item_id)
+            if found_item and found_item.name.lower() == item.lower():
+                target_item = found_item
+                target_item_id = item_id
+                break
+        
+        if not target_item:
+            embed = self._error_embed(
+                "Item introuvable",
+                f"Tu n'as pas **{item}** dans ton inventaire !"
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Vérifier si c'est de la nourriture ou une potion
+        if target_item.category not in ["Nourriture", "Potions"]:
+            embed = self._error_embed(
+                "Item non consommable",
+                f"**{target_item.name}** n'est pas de la nourriture ou une potion !\n"
+                f"Catégorie: {target_item.category}"
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Calculer le soin selon la rareté
+        healing_values = {
+            "NORMAL": 20,
+            "RARE": 50,
+            "EPIC": 120,
+            "LEGENDARY": 300,
+            "MYTHIC": 999  # Full heal pratiquement
+        }
+        
+        # Les potions soignent plus
+        base_heal = healing_values.get(target_item.rarity.name, 20)
+        if target_item.category == "Potions":
+            base_heal = int(base_heal * 1.5)  # +50% pour les potions
+        
+        # Mettre à jour les stats d'équipement pour avoir le bon max_hp
+        player.update_equipment_stats(self.data)
+        
+        # PV actuels et max
+        old_hp = player.current_hp
+        max_hp = player.get_max_hp()
+        
+        # Appliquer le soin
+        player.current_hp = min(max_hp, old_hp + base_heal)
+        actual_heal = player.current_hp - old_hp
+        
+        # Retirer l'item de l'inventaire
+        player.inventory[target_item_id] -= 1
+        if player.inventory[target_item_id] <= 0:
+            del player.inventory[target_item_id]
+        
+        # Sauvegarder
+        self.data.save_player(player)
+        
+        # Créer l'embed de résultat
+        if target_item.category == "Potions":
+            emoji = "🧪"
+            action = "bu"
+            title = "Potion consommée !"
+        else:
+            emoji = "🍖"
+            action = "mangé"
+            title = "Miam miam !"
+        
+        # Couleur selon le soin
+        if actual_heal >= 200:
+            color = Colors.LEGENDARY
+        elif actual_heal >= 100:
+            color = Colors.EPIC
+        elif actual_heal >= 50:
+            color = Colors.RARE
+        else:
+            color = Colors.SUCCESS
+        
+        embed = discord.Embed(
+            title=f"{emoji} {title}",
+            color=color
+        )
+        
+        # Barre de vie
+        hp_percent = player.current_hp / max_hp
+        hp_bar = create_progress_bar(hp_percent, length=15)
+        
+        embed.description = (
+            f"```ansi\n"
+            f"\u001b[1;32m╔{'═' * 30}╗\u001b[0m\n"
+            f"\u001b[1;32m║\u001b[0m  Tu as {action} {target_item.rarity.emoji} {target_item.name}  \u001b[1;32m║\u001b[0m\n"
+            f"\u001b[1;32m╚{'═' * 30}╝\u001b[0m\n"
+            f"```"
+        )
+        
+        embed.add_field(
+            name="❤️ Points de vie",
+            value=(
+                f"```diff\n"
+                f"- Avant: {old_hp}/{max_hp} PV\n"
+                f"+ Après: {player.current_hp}/{max_hp} PV\n"
+                f"+ Soin: +{actual_heal} PV\n"
+                f"```\n"
+                f"{hp_bar} **{player.current_hp}/{max_hp}**"
+            ),
+            inline=False
+        )
+        
+        if actual_heal < base_heal:
+            embed.add_field(
+                name="💡 Info",
+                value=f"Tu étais presque full HP ! (Soin max: +{base_heal})",
+                inline=False
+            )
+        
+        # Quantité restante
+        remaining = player.inventory.get(target_item_id, 0)
+        embed.set_footer(
+            text=f"Il te reste {remaining} {target_item.name}" if remaining > 0 else f"Tu n'as plus de {target_item.name}",
+            icon_url=interaction.user.display_avatar.url
+        )
+        
+        await interaction.response.send_message(embed=embed)
+
+    # ───────────────────────────────────────────────────────────────
+    # �🏪 COMMANDE BOUTIQUE MODERNE
     # ───────────────────────────────────────────────────────────────
 
     @app_commands.command(name="boutique", description="🏪 Affiche la boutique du serveur")

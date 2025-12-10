@@ -9,7 +9,7 @@ import asyncio
 import random
 
 from services import DataManager
-from utils import GIFS, COLORS, EMOJIS
+from utils import COLORS
 from utils.styles import (
     Colors, Emojis,
     create_progress_bar, create_stat_bar,

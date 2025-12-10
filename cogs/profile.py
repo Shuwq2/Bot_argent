@@ -8,7 +8,7 @@ from typing import Optional
 
 from models import Rarity
 from services import DataManager
-from utils import GIFS, COLORS, EMOJIS
+from utils import COLORS
 from utils.styles import (
     Colors, Emojis,
     create_progress_bar, create_stat_bar, create_xp_bar,

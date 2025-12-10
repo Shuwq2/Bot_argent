@@ -23,6 +23,7 @@ class Colors:
     ERROR = 0xED4245        # Rouge erreur
     WARNING = 0xFEE75C      # Jaune avertissement
     INFO = 0x5865F2         # Bleu info
+    DANGER = 0xED4245       # Rouge danger (combat/boss)
     
     # Couleurs de rareté
     NORMAL = 0x95A5A6       # Gris

@@ -451,6 +451,112 @@ class Admin(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ══════════════════════════════════════════════════════════════
+    # 🔒 RESTREINDRE L'ACCÈS D'UN UTILISATEUR
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="admin-restrict", description="🔒 [ADMIN] Restreindre un joueur à un seul salon")
+    @app_commands.describe(
+        joueur="Joueur à restreindre",
+        salon="Salon auquel il aura accès"
+    )
+    @is_admin()
+    async def admin_restrict(
+        self, 
+        interaction: discord.Interaction, 
+        joueur: discord.Member,
+        salon: discord.TextChannel
+    ):
+        """Restreint un utilisateur à un seul salon."""
+        await interaction.response.defer(ephemeral=True)
+        
+        guild = interaction.guild
+        restricted_count = 0
+        
+        # Parcourir tous les salons
+        for channel in guild.channels:
+            try:
+                if channel.id == salon.id:
+                    # Donner accès au salon spécifié
+                    await channel.set_permissions(
+                        joueur,
+                        view_channel=True,
+                        read_messages=True,
+                        send_messages=True,
+                        read_message_history=True,
+                        use_application_commands=True
+                    )
+                else:
+                    # Cacher tous les autres salons
+                    await channel.set_permissions(
+                        joueur,
+                        view_channel=False,
+                        read_messages=False
+                    )
+                    restricted_count += 1
+            except Exception as e:
+                print(f"⚠️ Erreur sur {channel.name}: {e}")
+        
+        embed = discord.Embed(
+            title="🔒 Accès Restreint",
+            color=0x2ecc71
+        )
+        embed.add_field(
+            name="👤 Joueur",
+            value=joueur.mention,
+            inline=True
+        )
+        embed.add_field(
+            name="📺 Salon autorisé",
+            value=salon.mention,
+            inline=True
+        )
+        embed.add_field(
+            name="🚫 Salons cachés",
+            value=f"`{restricted_count}`",
+            inline=True
+        )
+        embed.set_footer(text=f"Par {interaction.user.display_name}")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="admin-unrestrict", description="🔓 [ADMIN] Rétablir l'accès normal d'un joueur")
+    @app_commands.describe(joueur="Joueur à libérer")
+    @is_admin()
+    async def admin_unrestrict(
+        self, 
+        interaction: discord.Interaction, 
+        joueur: discord.Member
+    ):
+        """Retire les restrictions d'accès d'un utilisateur."""
+        await interaction.response.defer(ephemeral=True)
+        
+        guild = interaction.guild
+        cleared_count = 0
+        
+        # Parcourir tous les salons et retirer les overrides
+        for channel in guild.channels:
+            try:
+                # Supprimer les permissions spécifiques
+                await channel.set_permissions(joueur, overwrite=None)
+                cleared_count += 1
+            except Exception as e:
+                print(f"⚠️ Erreur sur {channel.name}: {e}")
+        
+        embed = discord.Embed(
+            title="🔓 Restrictions Retirées",
+            description=f"**{joueur.display_name}** a maintenant accès normal au serveur.",
+            color=0x2ecc71
+        )
+        embed.add_field(
+            name="📺 Salons libérés",
+            value=f"`{cleared_count}`",
+            inline=True
+        )
+        embed.set_footer(text=f"Par {interaction.user.display_name}")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # ══════════════════════════════════════════════════════════════
     # ❌ GESTION DES ERREURS
     # ══════════════════════════════════════════════════════════════
 

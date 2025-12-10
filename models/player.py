@@ -212,19 +212,90 @@ class Player:
     
     def get_max_hp(self) -> int:
         """Calcule les HP max avec bonus d'équipement."""
-        return self.base_hp
+        bonus_hp = self._get_equipment_stat("hp")
+        return self.base_hp + bonus_hp
     
     def get_attack(self) -> int:
-        """Calcule l'attaque totale avec bonus."""
-        return self.base_attack
+        """Calcule l'attaque totale avec bonus d'équipement."""
+        bonus_attack = self._get_equipment_stat("attack")
+        return self.base_attack + bonus_attack
     
     def get_defense(self) -> int:
-        """Calcule la défense totale avec bonus."""
-        return self.base_defense
+        """Calcule la défense totale avec bonus d'équipement."""
+        bonus_defense = self._get_equipment_stat("defense")
+        return self.base_defense + bonus_defense
     
     def get_speed(self) -> int:
-        """Calcule la vitesse totale."""
-        return self.base_speed
+        """Calcule la vitesse totale avec bonus d'équipement."""
+        bonus_speed = self._get_equipment_stat("speed")
+        return self.base_speed + bonus_speed
+    
+    def get_coin_bonus(self) -> float:
+        """Calcule le bonus de pièces (pourcentage) depuis l'équipement."""
+        return self._get_equipment_stat("coin_bonus")
+    
+    def get_xp_bonus(self) -> float:
+        """Calcule le bonus d'XP (pourcentage) depuis l'équipement."""
+        return self._get_equipment_stat("xp_bonus")
+    
+    def _get_equipment_stat(self, stat_name: str) -> float:
+        """
+        Récupère la somme d'une stat depuis tous les équipements.
+        Note: Nécessite que le DataManager soit passé ou que les stats soient stockées.
+        """
+        # Cette méthode sera appelée avec le contexte du DataManager
+        # Pour l'instant, on utilise les stats stockées localement
+        if not hasattr(self, '_equipment_stats_cache'):
+            return 0
+        return self._equipment_stats_cache.get(stat_name, 0)
+    
+    def update_equipment_stats(self, data_manager) -> None:
+        """Met à jour le cache des stats d'équipement."""
+        self._equipment_stats_cache = {
+            "hp": 0,
+            "attack": 0,
+            "defense": 0,
+            "speed": 0,
+            "coin_bonus": 0.0,
+            "xp_bonus": 0.0,
+            "drop_bonus": 0.0
+        }
+        
+        for slot, item_id in self.equipment.items():
+            if item_id:
+                item = data_manager.get_item(item_id)
+                if item:
+                    # TOUJOURS générer des stats selon la rareté et le slot
+                    # Les stats dans items.json sont ignorées pour le combat
+                    default_stats = self._get_default_item_stats(item, slot)
+                    for stat, value in default_stats.items():
+                        if stat in self._equipment_stats_cache:
+                            self._equipment_stats_cache[stat] += value
+    
+    def _get_default_item_stats(self, item, slot: str) -> dict:
+        """Génère des stats par défaut selon la rareté et le slot."""
+        # Multiplicateurs BEAUCOUP plus élevés pour que l'équipement compte vraiment
+        rarity_multipliers = {
+            "NORMAL": 2,
+            "RARE": 5,
+            "EPIC": 15,
+            "LEGENDARY": 40,
+            "MYTHIC": 100  # Mythique = écrase tout
+        }
+        
+        multiplier = rarity_multipliers.get(item.rarity.name, 1)
+        
+        # Stats selon le type de slot - valeurs de base plus élevées
+        slot_stats = {
+            "HELMET": {"defense": 8 * multiplier, "hp": 25 * multiplier},
+            "CHESTPLATE": {"defense": 15 * multiplier, "hp": 50 * multiplier},
+            "LEGGINGS": {"defense": 10 * multiplier, "hp": 35 * multiplier},
+            "BOOTS": {"defense": 6 * multiplier, "speed": 5 * multiplier, "hp": 15 * multiplier},
+            "WEAPON": {"attack": 20 * multiplier, "speed": 3 * multiplier},  # Arme = gros dégâts
+            "ACCESSORY": {"coin_bonus": 0.05 * multiplier, "xp_bonus": 0.05 * multiplier, "hp": 20 * multiplier}
+        }
+        
+        return slot_stats.get(slot, {})
     
     def heal_full(self) -> None:
         """Restaure tous les HP."""

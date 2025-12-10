@@ -9,7 +9,7 @@ import asyncio
 
 from models import Chest, Rarity
 from services import DataManager
-from utils import RARITY_IMAGES, SUSPENSE_COLORS, GIFS, COLORS, EMOJIS
+from utils import RARITY_IMAGES, SUSPENSE_COLORS, COLORS
 from utils.styles import (
     Colors, Emojis,
     create_progress_bar, create_rarity_indicator,
