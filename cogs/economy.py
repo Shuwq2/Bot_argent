@@ -17,8 +17,20 @@ class Economy(commands.Cog):
     """Cog pour le système d'économie et de collection."""
 
     # ══════════════════════════════════════════════════════════════
-    # 📸 GIFS - REMPLACE CES URLS PAR TES PROPRES GIFS
+    # 📸 IMAGES DE RARETÉ - Aurores boréales par couleur
     # ══════════════════════════════════════════════════════════════
+    
+    # Images locales hébergées (tu peux les uploader sur Discord ou un CDN)
+    RARITY_IMAGES = {
+        "normal": "https://i.imgur.com/placeholder_grey.png",      # Gris/Blanc
+        "rare": "https://i.imgur.com/placeholder_blue.png",        # Bleu - ton image bleue
+        "epic": "https://i.imgur.com/placeholder_purple.png",      # Violet - ton image violette  
+        "legendary": "https://i.imgur.com/placeholder_gold.png",   # Or/Jaune - ton image dorée
+        "mythic": "https://i.imgur.com/placeholder_red.png",       # Rouge - ton image rouge
+    }
+    
+    # Séquence d'animation (couleurs qui défilent)
+    SUSPENSE_SEQUENCE = ["rare", "epic", "legendary", "mythic", "epic", "rare", "legendary", "epic"]
     
     GIFS = {
         # Ouverture de coffre
@@ -101,10 +113,19 @@ class Economy(commands.Cog):
     # 🎁 COMMANDE COFFRE
     # ══════════════════════════════════════════════════════════════
 
+    # Couleurs hex pour l'animation
+    SUSPENSE_COLORS = {
+        "normal": 0x9e9e9e,    # Gris
+        "rare": 0x3498db,      # Bleu
+        "epic": 0x9b59b6,      # Violet
+        "legendary": 0xf1c40f, # Or
+        "mythic": 0xe74c3c,    # Rouge
+    }
+
     @app_commands.command(name="coffre", description="🎁 Ouvre un coffre mystérieux !")
     @app_commands.describe(payer="💎 Payer 3500 pièces pour un coffre bonus")
     async def open_chest(self, interaction: discord.Interaction, payer: Optional[bool] = False):
-        """Ouvre un coffre avec animation."""
+        """Ouvre un coffre avec animation de suspense."""
         player = self.data.get_player(interaction.user.id)
         
         # Vérifications
@@ -136,47 +157,73 @@ class Economy(commands.Cog):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
-        # ═══ PHASE 1: Animation d'ouverture ═══
-        opening_embed = discord.Embed(
-            title=f"{self.EMOJIS['sparkle']} Ouverture du Coffre... {self.EMOJIS['sparkle']}",
-            description=self._create_chest_art(),
-            color=0xFFD700
-        )
-        if self.GIFS["chest_opening"] != "REMPLACE_PAR_TON_GIF":
-            opening_embed.set_image(url=self.GIFS["chest_opening"])
-        
-        await interaction.response.send_message(embed=opening_embed)
-        await asyncio.sleep(2)
-
-        # Logique d'ouverture
+        # Logique d'ouverture (avant l'animation pour déterminer le résultat)
         success = player.open_chest(paid=payer and not player.can_open_free_chest())
         if not success:
-            await interaction.edit_original_response(embed=self._create_error_embed("Erreur", "Impossible d'ouvrir le coffre."))
+            await interaction.response.send_message(embed=self._create_error_embed("Erreur", "Impossible d'ouvrir le coffre."))
             return
 
         # Calcul du bonus de drop (pet + sets)
         drop_bonus = self.data.calculate_total_drop_bonus(player)
         item = self.chest.open(drop_bonus)
         if not item:
-            await interaction.edit_original_response(embed=self._create_error_embed("Erreur", "Aucun objet disponible."))
+            await interaction.response.send_message(embed=self._create_error_embed("Erreur", "Aucun objet disponible."))
             return
 
         player.add_item(item.item_id)
         self.data.save_player(player)
 
-        # ═══ PHASE 2: Révélation selon rareté ═══
+        # ═══ ANIMATION DE SUSPENSE ═══
+        # Séquence de raretés qui défilent (plus de suspense pour les raretés hautes)
+        rarity_name = item.rarity.name.lower()
+        
+        # Premier embed d'ouverture
+        opening_embed = discord.Embed(
+            title=f"{self.EMOJIS['sparkle']} Ouverture du Coffre... {self.EMOJIS['sparkle']}",
+            description="```\n✨ Le coffre s'illumine... ✨\n```",
+            color=0xFFD700
+        )
+        await interaction.response.send_message(embed=opening_embed)
+        await asyncio.sleep(0.8)
+
+        # Animation de suspense - défilement des couleurs
+        suspense_sequence = ["rare", "epic", "legendary", "mythic", "legendary", "epic", "rare", "epic", "legendary"]
+        
+        for i, rarity_key in enumerate(suspense_sequence):
+            # Ralentir progressivement
+            delay = 0.15 + (i * 0.05)
+            
+            suspense_embed = discord.Embed(
+                title="🎲 Tirage en cours...",
+                description=f"```\n{'▓' * (i + 1)}{'░' * (len(suspense_sequence) - i - 1)}\n```",
+                color=self.SUSPENSE_COLORS.get(rarity_key, 0xFFFFFF)
+            )
+            
+            # Ajouter l'image de la rareté si disponible
+            if self.RARITY_IMAGES.get(rarity_key) and "placeholder" not in self.RARITY_IMAGES[rarity_key]:
+                suspense_embed.set_image(url=self.RARITY_IMAGES[rarity_key])
+            
+            await interaction.edit_original_response(embed=suspense_embed)
+            await asyncio.sleep(delay)
+
+        # Pause dramatique avant la révélation
+        await asyncio.sleep(0.5)
+
+        # ═══ RÉVÉLATION FINALE ═══
         reveal_embed = discord.Embed(
             title=self._get_reveal_title(item.rarity),
+            description=f"```\n{'⭐' * 10}\n```",
             color=self.COLORS.get(item.rarity, 0x9e9e9e)
         )
-        gif_key = f"chest_{item.rarity.name.lower()}"
-        if self.GIFS.get(gif_key) and self.GIFS[gif_key] != "REMPLACE_PAR_TON_GIF":
-            reveal_embed.set_image(url=self.GIFS[gif_key])
+        
+        # Image finale de la vraie rareté
+        if self.RARITY_IMAGES.get(rarity_name) and "placeholder" not in self.RARITY_IMAGES[rarity_name]:
+            reveal_embed.set_image(url=self.RARITY_IMAGES[rarity_name])
         
         await interaction.edit_original_response(embed=reveal_embed)
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(1.2)
 
-        # ═══ PHASE 3: Affichage final ═══
+        # ═══ AFFICHAGE FINAL DE L'ITEM ═══
         final_embed = self._create_item_reveal_embed(item, player)
         await interaction.edit_original_response(embed=final_embed)
 
