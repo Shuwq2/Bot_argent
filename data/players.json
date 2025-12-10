@@ -1,0 +1,16 @@
+{
+  "players": [
+    {
+      "user_id": 663426071273799683,
+      "coins": 0,
+      "inventory": {
+        "phoenix_feather": 1,
+        "snake_scale": 1
+      },
+      "daily_chests_opened": 2,
+      "last_chest_date": "2025-12-10",
+      "total_chests_opened": 2,
+      "total_items_sold": 0
+    }
+  ]
+}
