@@ -11,8 +11,8 @@ class Rarity(Enum):
     NORMAL = ("Normal", 0.70, "⬜", 10)        # 70% de chance
     RARE = ("Rare", 0.20, "🟦", 50)            # 20% de chance
     EPIC = ("Epic", 0.065, "🟪", 200)          # 6.5% de chance
-    LEGENDARY = ("Légendaire", 0.02, "🟨", 1000)   # 2% de chance
-    MYTHIC = ("Mythique", 0.015, "🟥", 5000)   # 1.5% de chance
+    LEGENDARY = ("Légendaire", 0.01, "🟨", 1000)   # 1% de chance
+    MYTHIC = ("Mythique", 0.0015, "🟥", 5000)   # 0.15% de chance
 
     def __init__(self, display_name: str, drop_rate: float, emoji: str, base_value: int):
         self.display_name = display_name
