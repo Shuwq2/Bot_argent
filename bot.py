@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from services import DataManager
 from cogs.economy import Economy
+from cogs.admin import Admin
 
 
 # Charger les variables d'environnement
@@ -38,6 +39,7 @@ class EconomyBot(commands.Bot):
         """Configuration initiale du bot."""
         # Charger les cogs
         await self.add_cog(Economy(self, self.data_manager))
+        await self.add_cog(Admin(self, self.data_manager))
         
         # Synchroniser les commandes slash
         await self.tree.sync()

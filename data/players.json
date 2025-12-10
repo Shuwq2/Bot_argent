@@ -7,11 +7,12 @@
         "phoenix_feather": 1,
         "nut_forest": 1,
         "mushroom_common": 1,
-        "crystal_small": 1
+        "crystal_small": 1,
+        "owl_feather": 1
       },
-      "daily_chests_opened": 5,
+      "daily_chests_opened": 6,
       "last_chest_date": "2025-12-10",
-      "total_chests_opened": 5,
+      "total_chests_opened": 6,
       "total_items_sold": 1
     }
   ]

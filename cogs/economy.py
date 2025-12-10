@@ -282,7 +282,188 @@ class Economy(commands.Cog):
         return f"`[{filled}{empty}]` {rarity.emoji} {rarity.display_name}"
 
     # ══════════════════════════════════════════════════════════════
-    # 🎒 COMMANDE INVENTAIRE
+    # � COMMANDE COFFRES MULTIPLES
+    # ══════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="coffres", description="🎁 Ouvre plusieurs coffres d'un coup !")
+    @app_commands.describe(
+        nombre="Nombre de coffres à ouvrir",
+        payer="Payer 3500 pièces par coffre au-delà de la limite gratuite"
+    )
+    @app_commands.choices(nombre=[
+        app_commands.Choice(name="🎁 10 coffres", value=10),
+        app_commands.Choice(name="🎁 25 coffres", value=25),
+        app_commands.Choice(name="🎁 30 coffres", value=30),
+        app_commands.Choice(name="🎁 45 coffres", value=45),
+        app_commands.Choice(name="🎁 50 coffres", value=50),
+    ])
+    async def open_multiple_chests(
+        self, 
+        interaction: discord.Interaction, 
+        nombre: int,
+        payer: Optional[bool] = False
+    ):
+        """Ouvre plusieurs coffres avec résumé."""
+        player = self.data.get_player(interaction.user.id)
+        
+        # Calculer combien on peut ouvrir
+        free_remaining = player.get_remaining_free_chests()
+        
+        if not payer:
+            # Mode gratuit uniquement
+            if free_remaining == 0:
+                embed = self._create_error_embed(
+                    "🚫 Limite Journalière Atteinte",
+                    f"Tu as utilisé tous tes coffres gratuits aujourd'hui.\n\n"
+                    f"💡 Utilise `/coffres nombre:X payer:True` pour acheter des coffres.\n"
+                    f"💰 Coût: **{player.CHEST_COST:,}** pièces/coffre"
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            chests_to_open = min(nombre, free_remaining)
+            cost = 0
+        else:
+            # Mode payant autorisé
+            free_to_use = min(nombre, free_remaining)
+            paid_to_use = nombre - free_to_use
+            cost = paid_to_use * player.CHEST_COST
+            
+            if cost > player.coins:
+                max_affordable = player.coins // player.CHEST_COST
+                embed = self._create_error_embed(
+                    "💸 Fonds Insuffisants",
+                    f"```diff\n"
+                    f"- Coffres demandés: {nombre}\n"
+                    f"- Coffres gratuits restants: {free_remaining}\n"
+                    f"- Coffres à payer: {paid_to_use}\n"
+                    f"- Coût total: {cost:,} 💰\n"
+                    f"- Ton solde: {player.coins:,} 💰\n"
+                    f"```\n"
+                    f"💡 Tu peux ouvrir max **{free_remaining + max_affordable}** coffres."
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            chests_to_open = nombre
+
+        # Animation d'ouverture
+        opening_embed = discord.Embed(
+            title=f"🎁 Ouverture de {chests_to_open} Coffres...",
+            description=(
+                f"```\n"
+                f"╔═══════════════════════════════════╗\n"
+                f"║     📦📦📦 OUVERTURE EN COURS 📦📦📦   ║\n"
+                f"║                                    ║\n"
+                f"║        Chargement...               ║\n"
+                f"╚═══════════════════════════════════╝\n"
+                f"```"
+            ),
+            color=0xFFD700
+        )
+        if self.GIFS["chest_opening"] != "REMPLACE_PAR_TON_GIF":
+            opening_embed.set_thumbnail(url=self.GIFS["chest_opening"])
+
+        await interaction.response.send_message(embed=opening_embed)
+        await asyncio.sleep(2)
+
+        # Ouvrir les coffres et collecter les items
+        items_obtained = []
+        rarity_counts = {r: 0 for r in Rarity}
+        total_value = 0
+
+        for i in range(chests_to_open):
+            # Déterminer si gratuit ou payant
+            if player.can_open_free_chest():
+                success = player.open_chest(paid=False)
+            else:
+                success = player.open_chest(paid=True)
+            
+            if success:
+                item = self.chest.open()
+                if item:
+                    player.add_item(item.item_id)
+                    items_obtained.append(item)
+                    rarity_counts[item.rarity] += 1
+                    total_value += item.value
+
+        self.data.save_player(player)
+
+        # Créer le résumé
+        result_embed = discord.Embed(
+            title=f"🎉 {len(items_obtained)} Coffres Ouverts !",
+            color=0x2ecc71
+        )
+
+        # Résumé par rareté
+        rarity_summary = ""
+        for rarity in [Rarity.MYTHIC, Rarity.LEGENDARY, Rarity.EPIC, Rarity.RARE, Rarity.NORMAL]:
+            count = rarity_counts[rarity]
+            if count > 0:
+                rarity_summary += f"{rarity.emoji} **{rarity.display_name}**: `{count}`\n"
+
+        result_embed.add_field(
+            name="📊 Résumé par Rareté",
+            value=rarity_summary or "Aucun objet",
+            inline=True
+        )
+
+        # Stats
+        result_embed.add_field(
+            name="💰 Valeur Totale",
+            value=f"`{total_value:,}` pièces",
+            inline=True
+        )
+
+        if cost > 0:
+            result_embed.add_field(
+                name="💳 Coût",
+                value=f"`{cost:,}` pièces",
+                inline=True
+            )
+
+        # Meilleurs drops (top 5)
+        if items_obtained:
+            # Trier par valeur
+            best_items = sorted(items_obtained, key=lambda x: x.value, reverse=True)[:5]
+            best_text = ""
+            for item in best_items:
+                best_text += f"{item.rarity.emoji} **{item.name}** - {item.value:,}💰\n"
+            
+            result_embed.add_field(
+                name="🏆 Meilleurs Drops",
+                value=best_text,
+                inline=False
+            )
+
+        # Stats joueur
+        result_embed.add_field(
+            name="📈 Tes Stats",
+            value=(
+                f"```yml\n"
+                f"Coffres restants: {player.get_remaining_free_chests()}/50\n"
+                f"Solde: {player.coins:,}\n"
+                f"Total ouverts: {player.total_chests_opened}\n"
+                f"```"
+            ),
+            inline=False
+        )
+
+        # Check pour objets rares
+        mythic_count = rarity_counts[Rarity.MYTHIC]
+        legendary_count = rarity_counts[Rarity.LEGENDARY]
+        
+        if mythic_count > 0:
+            result_embed.set_footer(text=f"🔥 INCROYABLE ! Tu as obtenu {mythic_count} MYTHIQUE(S) ! 🔥")
+        elif legendary_count > 0:
+            result_embed.set_footer(text=f"⭐ Bravo ! {legendary_count} LÉGENDAIRE(S) obtenu(s) ! ⭐")
+        else:
+            result_embed.set_footer(text="💡 /inventaire pour voir ta collection")
+
+        await interaction.edit_original_response(embed=result_embed)
+
+    # ══════════════════════════════════════════════════════════════
+    # �🎒 COMMANDE INVENTAIRE
     # ══════════════════════════════════════════════════════════════
 
     @app_commands.command(name="inventaire", description="🎒 Affiche ta collection")

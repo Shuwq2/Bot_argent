@@ -7,11 +7,11 @@ from dataclasses import dataclass
 
 class Rarity(Enum):
     """Énumération des raretés disponibles avec leurs taux de drop."""
-    NORMAL = ("Normal", 0.50, "⬜", 10)       # 50% de chance, emoji, valeur de base
-    RARE = ("Rare", 0.30, "🟦", 50)           # 30% de chance
-    EPIC = ("Epic", 0.15, "🟪", 200)          # 15% de chance
+    NORMAL = ("Normal", 0.60, "⬜", 10)       # 60% de chance, emoji, valeur de base
+    RARE = ("Rare", 0.25, "🟦", 50)           # 25% de chance
+    EPIC = ("Epic", 0.10, "🟪", 200)          # 10% de chance
     LEGENDARY = ("Légendaire", 0.04, "🟨", 1000)  # 4% de chance
-    MYTHIC = ("Mythique", 0.01, "🟥", 5000)   # 1% de chance
+    MYTHIC = ("Mythique", 0.01, "🟥", 5000)   # 0.5% de chance (ajusté)
 
     def __init__(self, display_name: str, drop_rate: float, emoji: str, base_value: int):
         self.display_name = display_name
